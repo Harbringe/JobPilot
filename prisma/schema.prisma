@@ -1,0 +1,252 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────
+// Auth
+// ─────────────────────────────────────
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  passwordHash  String?   @map("password_hash")
+  name          String?
+  avatarUrl     String?   @map("avatar_url")
+  plan          Plan      @default(FREE)
+  provider      String?   // "google", "github", "email"
+  providerId    String?   @map("provider_id")
+  emailVerified Boolean   @default(false) @map("email_verified")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  lastLogin     DateTime? @map("last_login")
+
+  profile       Profile?
+  applications  Application[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+enum Plan {
+  FREE
+  PRO
+  PREMIUM
+}
+
+// ─────────────────────────────────────
+// Profile
+// ─────────────────────────────────────
+
+model Profile {
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("user_id")
+  fullName    String   @map("full_name")
+  headline    String?
+  summary     String?
+  phone       String?
+  location    String?
+  linkedinUrl String?  @map("linkedin_url")
+  githubUrl   String?  @map("github_url")
+  portfolioUrl String? @map("portfolio_url")
+  preferences Json?    // { salaryMin, salaryMax, currency, remoteType, visaRequired, industries[] }
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experiences  WorkExperience[]
+  educations   Education[]
+  skills       Skill[]
+  projects     Project[]
+  certifications Certification[]
+
+  @@map("profiles")
+}
+
+model WorkExperience {
+  id          String   @id @default(uuid())
+  profileId   String   @map("profile_id")
+  company     String
+  title       String
+  location    String?
+  startDate   DateTime @map("start_date")
+  endDate     DateTime? @map("end_date")
+  current     Boolean  @default(false)
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@map("work_experiences")
+}
+
+model Education {
+  id          String   @id @default(uuid())
+  profileId   String   @map("profile_id")
+  institution String
+  degree      String
+  field       String?
+  startDate   DateTime @map("start_date")
+  endDate     DateTime? @map("end_date")
+  gpa         String?
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@map("educations")
+}
+
+model Skill {
+  id        String @id @default(uuid())
+  profileId String @map("profile_id")
+  name      String
+  level     SkillLevel @default(INTERMEDIATE)
+  category  String?    // "programming", "framework", "tool", "soft_skill"
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, name])
+  @@map("skills")
+}
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+model Project {
+  id          String  @id @default(uuid())
+  profileId   String  @map("profile_id")
+  name        String
+  description String?
+  url         String?
+  techStack   String[] @map("tech_stack")
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@map("projects")
+}
+
+model Certification {
+  id          String   @id @default(uuid())
+  profileId   String   @map("profile_id")
+  name        String
+  issuer      String
+  issueDate   DateTime? @map("issue_date")
+  expiryDate  DateTime? @map("expiry_date")
+  url         String?
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@map("certifications")
+}
+
+// ─────────────────────────────────────
+// Jobs
+// ─────────────────────────────────────
+
+model Job {
+  id             String   @id @default(uuid())
+  title          String
+  company        String
+  companyLogoUrl String?  @map("company_logo_url")
+  location       String?
+  remoteType     RemoteType? @map("remote_type")
+  salaryMin      Int?     @map("salary_min")
+  salaryMax      Int?     @map("salary_max")
+  salaryCurrency String?  @map("salary_currency")
+  description    String
+  requirements   String[]
+  source         String   // "indeed", "adzuna", "remoteok", etc.
+  sourceUrl      String?  @map("source_url")
+  applyUrl       String   @map("apply_url")
+  postedAt       DateTime? @map("posted_at")
+  scrapedAt      DateTime @default(now()) @map("scraped_at")
+  fingerprint    String   @unique
+  isActive       Boolean  @default(true) @map("is_active")
+
+  applications Application[]
+
+  @@index([isActive, postedAt(sort: Desc)])
+  @@index([source, scrapedAt(sort: Desc)])
+  @@index([company])
+  @@map("jobs")
+}
+
+enum RemoteType {
+  REMOTE
+  HYBRID
+  ONSITE
+}
+
+// ─────────────────────────────────────
+// Applications
+// ─────────────────────────────────────
+
+model Application {
+  id         String            @id @default(uuid())
+  userId     String            @map("user_id")
+  jobId      String            @map("job_id")
+  status     ApplicationStatus @default(SAVED)
+  matchScore Float?            @map("match_score")
+  notes      String?
+  appliedAt  DateTime          @default(now()) @map("applied_at")
+  updatedAt  DateTime          @updatedAt @map("updated_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job     Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  resumes Resume[]
+
+  @@unique([userId, jobId])
+  @@index([userId, appliedAt(sort: Desc)])
+  @@index([userId, status])
+  @@map("applications")
+}
+
+enum ApplicationStatus {
+  SAVED
+  APPLIED
+  SCREENING
+  INTERVIEW
+  OFFER
+  ACCEPTED
+  DECLINED
+  REJECTED
+}
+
+model Resume {
+  id              String   @id @default(uuid())
+  applicationId   String   @map("application_id")
+  pdfUrl          String   @map("pdf_url")
+  template        String   @default("modern")
+  contentSnapshot Json?    @map("content_snapshot")
+  generatedAt     DateTime @default(now()) @map("generated_at")
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@map("resumes")
+}
