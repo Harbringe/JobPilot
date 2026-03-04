@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { validate } from "../../middleware/validate.js";
 import { authenticate, AuthRequest } from "../../middleware/auth.js";
+import { blockToken } from "../../middleware/tokenBlocklist.js";
 import { registerSchema, loginSchema, refreshSchema, changePasswordSchema, deleteAccountSchema } from "./auth.validation.js";
 import * as authService from "./auth.service.js";
 import type { Response } from "express";
@@ -40,6 +41,8 @@ authRouter.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
 
 // POST /auth/logout
 authRouter.post("/logout", authenticate, async (req: AuthRequest, res: Response) => {
+    // Blocklist the current access token so it can't be reused
+    if (req.rawToken) blockToken(req.rawToken);
     await authService.logout(req.user!.userId);
     res.json({ success: true, data: { message: "Logged out successfully" } });
 });
@@ -47,11 +50,13 @@ authRouter.post("/logout", authenticate, async (req: AuthRequest, res: Response)
 // POST /auth/change-password
 authRouter.post("/change-password", authenticate, validate(changePasswordSchema), async (req: AuthRequest, res: Response) => {
     await authService.changePassword(req.user!.userId, req.body.currentPassword, req.body.newPassword);
+    if (req.rawToken) blockToken(req.rawToken);
     res.json({ success: true, data: { message: "Password changed. Please log in again." } });
 });
 
 // POST /auth/delete-account
 authRouter.post("/delete-account", authenticate, validate(deleteAccountSchema), async (req: AuthRequest, res: Response) => {
     await authService.deleteAccount(req.user!.userId, req.body.password);
+    if (req.rawToken) blockToken(req.rawToken);
     res.json({ success: true, data: { message: "Account permanently deleted" } });
 });

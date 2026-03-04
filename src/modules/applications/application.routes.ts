@@ -3,6 +3,7 @@ import { authenticate, AuthRequest } from "../../middleware/auth.js";
 import { validate } from "../../middleware/validate.js";
 import { validateUUID } from "../../middleware/validateUUID.js";
 import { prisma } from "../../db/index.js";
+import { scoreJob } from "../ai/matching.service.js";
 import {
     createApplicationSchema,
     updateStatusSchema,
@@ -12,7 +13,6 @@ import {
 import type { Response } from "express";
 
 export const applicationRouter: Router = Router();
-
 applicationRouter.use(authenticate);
 
 // GET /applications — list all user applications
@@ -49,7 +49,7 @@ applicationRouter.get("/", validate(listApplicationsQuerySchema, "query"), async
     });
 });
 
-// POST /applications — create application
+// POST /applications — create application (auto-scores with AI)
 applicationRouter.post("/", validate(createApplicationSchema), async (req: AuthRequest, res: Response) => {
     const { jobId, notes } = req.body;
 
@@ -73,6 +73,11 @@ applicationRouter.post("/", validate(createApplicationSchema), async (req: AuthR
         },
         include: { job: true },
     });
+
+    // Auto-score in background (don't block response)
+    scoreApplicationAsync(req.user!.userId, application.id, application.job).catch((err) =>
+        console.warn("⚠️ Background scoring failed:", (err as Error).message)
+    );
 
     res.status(201).json({ success: true, data: application });
 });
@@ -169,3 +174,66 @@ applicationRouter.delete("/:id", validateUUID("id"), async (req: AuthRequest, re
     await prisma.application.delete({ where: { id } });
     res.json({ success: true, data: { message: "Application deleted" } });
 });
+
+// ─── Background scoring helper ───────────────────────────────────────────────
+
+async function scoreApplicationAsync(userId: string, applicationId: string, job: any): Promise<void> {
+    const profile = await prisma.profile.findUnique({
+        where: { userId },
+        include: { experiences: true, educations: true, skills: true },
+    });
+
+    if (!profile) return; // No profile, can't score
+
+    const scores = await scoreJob(
+        {
+            fullName: profile.fullName,
+            headline: profile.headline,
+            summary: profile.summary,
+            location: profile.location,
+            skills: profile.skills.map((s) => ({ name: s.name, level: s.level })),
+            experiences: profile.experiences.map((e) => ({
+                title: e.title,
+                company: e.company,
+                current: e.current,
+                startDate: e.startDate.toISOString(),
+                endDate: e.endDate?.toISOString() || null,
+            })),
+            educations: profile.educations.map((e) => ({
+                institution: e.institution,
+                degree: e.degree,
+                field: e.field,
+            })),
+            preferences: profile.preferences,
+        },
+        {
+            title: job.title,
+            company: job.company,
+            location: job.location,
+            remoteType: job.remoteType,
+            salaryMin: job.salaryMin,
+            salaryMax: job.salaryMax,
+            description: job.description,
+            requirements: job.requirements,
+        }
+    );
+
+    if (!scores) return;
+
+    await prisma.application.update({
+        where: { id: applicationId },
+        data: {
+            matchScore: scores.matchScore,
+            skillMatch: scores.skillMatch,
+            experienceMatch: scores.experienceMatch,
+            locationMatch: scores.locationMatch,
+            salaryMatch: scores.salaryMatch,
+            acceptanceScore: scores.acceptanceScore,
+            matchReason: scores.matchReason,
+            missingSkills: scores.missingSkills,
+            strongPoints: scores.strongPoints,
+        },
+    });
+
+    console.log(`✅ Scored application ${applicationId}: ${scores.matchScore}/100`);
+}

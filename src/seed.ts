@@ -49,6 +49,7 @@ async function seed() {
 
     // Add work experiences
     await prisma.workExperience.createMany({
+        skipDuplicates: true,
         data: [
             {
                 profileId: profile.id,
@@ -77,6 +78,7 @@ async function seed() {
 
     // Add education
     await prisma.education.createMany({
+        skipDuplicates: true,
         data: [
             {
                 profileId: profile.id,
@@ -93,6 +95,7 @@ async function seed() {
 
     // Add skills
     await prisma.skill.createMany({
+        skipDuplicates: true,
         data: [
             { profileId: profile.id, name: "TypeScript", level: "EXPERT", category: "programming" },
             { profileId: profile.id, name: "React", level: "EXPERT", category: "framework" },

@@ -207,14 +207,22 @@ enum RemoteType {
 // ─────────────────────────────────────
 
 model Application {
-  id         String            @id @default(uuid())
-  userId     String            @map("user_id")
-  jobId      String            @map("job_id")
-  status     ApplicationStatus @default(SAVED)
-  matchScore Float?            @map("match_score")
-  notes      String?
-  appliedAt  DateTime          @default(now()) @map("applied_at")
-  updatedAt  DateTime          @updatedAt @map("updated_at")
+  id              String            @id @default(uuid())
+  userId          String            @map("user_id")
+  jobId           String            @map("job_id")
+  status          ApplicationStatus @default(SAVED)
+  matchScore      Float?            @map("match_score")
+  skillMatch      Float?            @map("skill_match")
+  experienceMatch Float?            @map("experience_match")
+  locationMatch   Float?            @map("location_match")
+  salaryMatch     Float?            @map("salary_match")
+  acceptanceScore Float?            @map("acceptance_score")
+  matchReason     String?           @map("match_reason")
+  missingSkills   String[]          @default([]) @map("missing_skills")
+  strongPoints    String[]          @default([]) @map("strong_points")
+  notes           String?
+  appliedAt       DateTime          @default(now()) @map("applied_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   job     Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)

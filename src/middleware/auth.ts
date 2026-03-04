@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import { isTokenBlocked } from "./tokenBlocklist.js";
 
 export interface AuthPayload {
     userId: string;
@@ -9,6 +10,8 @@ export interface AuthPayload {
 
 export interface AuthRequest extends Request {
     user?: AuthPayload;
+    /** The raw Bearer token, needed for blocklisting on logout */
+    rawToken?: string;
 }
 
 export function authenticate(req: AuthRequest, res: Response, next: NextFunction) {
@@ -24,9 +27,19 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
 
     const token = header.split(" ")[1];
 
+    // Check if token has been revoked (user logged out or deleted account)
+    if (isTokenBlocked(token)) {
+        res.status(401).json({
+            success: false,
+            error: { code: "TOKEN_REVOKED", message: "Token has been revoked. Please log in again." },
+        });
+        return;
+    }
+
     try {
         const payload = jwt.verify(token, process.env.JWT_SECRET!) as AuthPayload;
         req.user = payload;
+        req.rawToken = token;
         next();
     } catch {
         res.status(401).json({
