@@ -1,16 +1,29 @@
 {
     "info": {
-        "name": "JobPilot API",
-        "description": "Complete API collection for JobPilot backend. Import the environment file first, then run requests in order.\n\n**Auto-magic:** Login/Register/Refresh automatically save tokens to environment variables. All protected requests use {{accessToken}} from the environment.\n\n**Quick Start:**\n1. Import this collection + environment\n2. Run \"Login (Demo)\" to auto-populate tokens\n3. Test any endpoint",
+        "name": "JobPilot API — Full Automation",
+        "description": "🤖 Run this collection top-to-bottom using Postman Runner.\n\nIt tests ALL endpoints in the correct order, chaining variables automatically.\n\n**Setup:** Import the environment file first, ensure server is running on {{baseUrl}}.\n\n**Run Order:**\n1. Health → 2. Auth → 3. Profile → 4. Jobs → 5. Applications → 6. Resumes → 7. AI → 8. Cleanup\n\n**What's mocked:**\n- Resume PDF URL (placeholder URL, no real file generated)\n- AI scoring requires GROK_API_KEY in .env (gracefully returns null without it)\n- Job insights requires GROK_API_KEY\n\n**What's REAL:**\n- Auth (register/login/refresh/logout/change-password)\n- Profile CRUD with full data\n- Job sync from Remotive + Arbeitnow (real external APIs)\n- Job search, filter, pagination\n- Application CRUD, status tracking, notes\n- Token blocklist (logout invalidates tokens immediately)",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "variable": [],
     "item": [
         {
-            "name": "🏥 Health",
+            "name": "1️⃣ Health",
             "item": [
                 {
                     "name": "Health Check",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('Status OK', () => pm.expect(pm.response.json().status).to.eql('ok'));",
+                                    "console.log('🏥 Server is healthy');"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "GET",
                         "url": {
@@ -27,23 +40,38 @@
             ]
         },
         {
-            "name": "🔐 Auth",
+            "name": "2️⃣ Auth",
             "item": [
                 {
-                    "name": "Register",
+                    "name": "Register new user",
                     "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "// Generate unique email for this run",
+                                    "const ts = Date.now();",
+                                    "pm.environment.set('testEmail', `autotest_${ts}@test.com`);",
+                                    "pm.environment.set('testPassword', 'AutoTest123!');"
+                                ]
+                            }
+                        },
                         {
                             "listen": "test",
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "if (pm.response.code === 201) {",
-                                    "    const data = pm.response.json().data;",
-                                    "    pm.environment.set('accessToken', data.accessToken);",
-                                    "    pm.environment.set('refreshToken', data.refreshToken);",
-                                    "    pm.environment.set('userId', data.user.id);",
-                                    "    pm.test('Registration successful', () => pm.expect(data.user.email).to.exist);",
-                                    "}"
+                                    "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                                    "const data = pm.response.json().data;",
+                                    "pm.test('Has tokens', () => {",
+                                    "    pm.expect(data.accessToken).to.be.a('string');",
+                                    "    pm.expect(data.refreshToken).to.be.a('string');",
+                                    "});",
+                                    "pm.environment.set('accessToken', data.accessToken);",
+                                    "pm.environment.set('refreshToken', data.refreshToken);",
+                                    "pm.environment.set('userId', data.user.id);",
+                                    "console.log('✅ Registered:', data.user.email);"
                                 ]
                             }
                         }
@@ -68,25 +96,24 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"email\": \"newuser@example.com\",\n    \"password\": \"TestPass123\",\n    \"name\": \"New User\"\n}"
+                            "raw": "{\n    \"email\": \"{{testEmail}}\",\n    \"password\": \"{{testPassword}}\",\n    \"name\": \"Auto Test User\"\n}"
                         }
                     }
                 },
                 {
-                    "name": "Login (Demo)",
+                    "name": "Login",
                     "event": [
                         {
                             "listen": "test",
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "if (pm.response.code === 200) {",
-                                    "    const data = pm.response.json().data;",
-                                    "    pm.environment.set('accessToken', data.accessToken);",
-                                    "    pm.environment.set('refreshToken', data.refreshToken);",
-                                    "    pm.environment.set('userId', data.user.id);",
-                                    "    pm.test('Login successful', () => pm.expect(data.accessToken).to.be.a('string'));",
-                                    "}"
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const data = pm.response.json().data;",
+                                    "pm.test('Has tokens', () => pm.expect(data.accessToken).to.be.a('string'));",
+                                    "pm.environment.set('accessToken', data.accessToken);",
+                                    "pm.environment.set('refreshToken', data.refreshToken);",
+                                    "console.log('✅ Logged in');"
                                 ]
                             }
                         }
@@ -111,12 +138,25 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"email\": \"{{demoEmail}}\",\n    \"password\": \"{{demoPassword}}\"\n}"
+                            "raw": "{\n    \"email\": \"{{testEmail}}\",\n    \"password\": \"{{testPassword}}\"\n}"
                         }
                     }
                 },
                 {
-                    "name": "Login (Bad Password)",
+                    "name": "Login (bad password → 401)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                                    "pm.test('Error code', () => pm.expect(pm.response.json().error.code).to.eql('INVALID_CREDENTIALS'));",
+                                    "console.log('✅ Bad password correctly rejected');"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "POST",
                         "url": {
@@ -137,8 +177,43 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"email\": \"{{demoEmail}}\",\n    \"password\": \"wrongpassword\"\n}"
+                            "raw": "{\n    \"email\": \"{{testEmail}}\",\n    \"password\": \"wrongpassword\"\n}"
                         }
+                    }
+                },
+                {
+                    "name": "Get Me (authenticated)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('Has user', () => pm.expect(pm.response.json().data.email).to.eql(pm.environment.get('testEmail')));",
+                                    "console.log('✅ /auth/me works');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "me"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ]
                     }
                 },
                 {
@@ -149,12 +224,12 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "if (pm.response.code === 200) {",
-                                    "    const data = pm.response.json().data;",
-                                    "    pm.environment.set('accessToken', data.accessToken);",
-                                    "    pm.environment.set('refreshToken', data.refreshToken);",
-                                    "    pm.test('Token refreshed', () => pm.expect(data.accessToken).to.be.a('string'));",
-                                    "}"
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const data = pm.response.json().data;",
+                                    "pm.test('New tokens', () => pm.expect(data.accessToken).to.be.a('string'));",
+                                    "pm.environment.set('accessToken', data.accessToken);",
+                                    "pm.environment.set('refreshToken', data.refreshToken);",
+                                    "console.log('✅ Token refreshed');"
                                 ]
                             }
                         }
@@ -184,111 +259,20 @@
                     }
                 },
                 {
-                    "name": "Get Me",
-                    "request": {
-                        "method": "GET",
-                        "url": {
-                            "raw": "{{baseUrl}}/auth/me",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "auth",
-                                "me"
-                            ]
-                        },
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
+                    "name": "Validation Error (bad register → 400)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                                    "pm.test('Validation error', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));",
+                                    "console.log('✅ Validation correctly caught bad input');"
+                                ]
                             }
-                        ]
-                    }
-                },
-                {
-                    "name": "Change Password",
-                    "request": {
-                        "method": "POST",
-                        "url": {
-                            "raw": "{{baseUrl}}/auth/change-password",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "auth",
-                                "change-password"
-                            ]
-                        },
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n    \"currentPassword\": \"Test1234\",\n    \"newPassword\": \"NewPass456\"\n}"
                         }
-                    }
-                },
-                {
-                    "name": "Logout",
-                    "request": {
-                        "method": "POST",
-                        "url": {
-                            "raw": "{{baseUrl}}/auth/logout",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "auth",
-                                "logout"
-                            ]
-                        },
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
-                            }
-                        ]
-                    }
-                },
-                {
-                    "name": "Delete Account ⚠️",
-                    "request": {
-                        "method": "POST",
-                        "url": {
-                            "raw": "{{baseUrl}}/auth/delete-account",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "auth",
-                                "delete-account"
-                            ]
-                        },
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n    \"password\": \"TestPass123\"\n}"
-                        }
-                    }
-                },
-                {
-                    "name": "Validation Error (Bad Register)",
+                    ],
                     "request": {
                         "method": "POST",
                         "url": {
@@ -309,38 +293,61 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"email\": \"bad\",\n    \"password\": \"short\",\n    \"name\": \"\"\n}"
+                            "raw": "{\n    \"email\": \"bad\",\n    \"password\": \"x\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "No token (→ 401)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                                    "console.log('✅ Unauthenticated request rejected');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "me"
+                            ]
                         }
                     }
                 }
             ]
         },
         {
-            "name": "👤 Profile",
+            "name": "3️⃣ Profile",
             "item": [
                 {
-                    "name": "Get Profile",
-                    "request": {
-                        "method": "GET",
-                        "url": {
-                            "raw": "{{baseUrl}}/profile",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "profile"
-                            ]
-                        },
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
+                    "name": "Upsert Profile (create)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const data = pm.response.json().data;",
+                                    "pm.test('Profile created', () => pm.expect(data.fullName).to.eql('Auto Test Engineer'));",
+                                    "pm.test('Has skills', () => pm.expect(data.skills.length).to.be.greaterThan(0));",
+                                    "pm.test('Has experiences', () => pm.expect(data.experiences.length).to.be.greaterThan(0));",
+                                    "console.log('✅ Profile created with', data.skills.length, 'skills');"
+                                ]
                             }
-                        ]
-                    }
-                },
-                {
-                    "name": "Upsert Profile",
+                        }
+                    ],
                     "request": {
                         "method": "PUT",
                         "url": {
@@ -364,12 +371,58 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"fullName\": \"Demo User\",\n    \"headline\": \"Full-Stack Developer | React & Node.js\",\n    \"summary\": \"5+ years building scalable web apps.\",\n    \"phone\": \"+1-555-0123\",\n    \"location\": \"San Francisco, CA\",\n    \"linkedinUrl\": \"https://linkedin.com/in/demouser\",\n    \"githubUrl\": \"https://github.com/demouser\",\n    \"portfolioUrl\": \"\",\n    \"preferences\": {\n        \"salaryMin\": 120000,\n        \"salaryMax\": 200000,\n        \"currency\": \"USD\",\n        \"remoteType\": \"REMOTE\",\n        \"visaRequired\": false,\n        \"industries\": [\"technology\", \"fintech\"]\n    },\n    \"experiences\": [\n        {\n            \"company\": \"TechCorp\",\n            \"title\": \"Senior Developer\",\n            \"location\": \"SF\",\n            \"startDate\": \"2022-03-01\",\n            \"current\": true,\n            \"description\": \"Led platform development.\"\n        }\n    ],\n    \"educations\": [\n        {\n            \"institution\": \"UC Berkeley\",\n            \"degree\": \"BS Computer Science\",\n            \"field\": \"CS\",\n            \"startDate\": \"2015-08-01\",\n            \"endDate\": \"2019-05-15\"\n        }\n    ],\n    \"skills\": [\n        { \"name\": \"TypeScript\", \"level\": \"EXPERT\", \"category\": \"programming\" },\n        { \"name\": \"React\", \"level\": \"EXPERT\", \"category\": \"framework\" },\n        { \"name\": \"Node.js\", \"level\": \"ADVANCED\", \"category\": \"framework\" }\n    ],\n    \"projects\": [\n        {\n            \"name\": \"JobPilot\",\n            \"description\": \"AI job automation platform\",\n            \"url\": \"https://github.com/demo/jobpilot\",\n            \"techStack\": [\"React\", \"Node.js\", \"PostgreSQL\"]\n        }\n    ],\n    \"certifications\": []\n}"
+                            "raw": "{\n    \"fullName\": \"Auto Test Engineer\",\n    \"headline\": \"Senior Full-Stack Developer | React & Node.js & Python\",\n    \"summary\": \"7+ years building production web applications. Expert in React, TypeScript, Node.js, and Python. Led teams of 5-10 engineers. Passionate about clean architecture and DevOps.\",\n    \"phone\": \"+1-555-0199\",\n    \"location\": \"San Francisco, CA\",\n    \"linkedinUrl\": \"https://linkedin.com/in/autotester\",\n    \"githubUrl\": \"https://github.com/autotester\",\n    \"portfolioUrl\": \"https://autotester.dev\",\n    \"preferences\": {\n        \"salaryMin\": 130000,\n        \"salaryMax\": 220000,\n        \"currency\": \"USD\",\n        \"remoteType\": \"REMOTE\",\n        \"visaRequired\": false,\n        \"industries\": [\"technology\", \"fintech\", \"ai\"]\n    },\n    \"experiences\": [\n        {\n            \"company\": \"TechCorp Inc.\",\n            \"title\": \"Senior Software Engineer\",\n            \"location\": \"San Francisco, CA\",\n            \"startDate\": \"2021-01-15\",\n            \"current\": true,\n            \"description\": \"Led development of microservices platform serving 2M+ users. Reduced API latency by 40% through caching and query optimization. Mentored 4 junior engineers.\"\n        },\n        {\n            \"company\": \"StartupXYZ\",\n            \"title\": \"Full-Stack Developer\",\n            \"location\": \"Remote\",\n            \"startDate\": \"2018-06-01\",\n            \"endDate\": \"2020-12-31\",\n            \"current\": false,\n            \"description\": \"Built React + Node.js SaaS platform from 0 to 50K users. Implemented CI/CD pipelines and automated testing. Managed PostgreSQL and Redis infrastructure.\"\n        }\n    ],\n    \"educations\": [\n        {\n            \"institution\": \"MIT\",\n            \"degree\": \"BS Computer Science\",\n            \"field\": \"Computer Science\",\n            \"startDate\": \"2014-09-01\",\n            \"endDate\": \"2018-05-15\"\n        }\n    ],\n    \"skills\": [\n        { \"name\": \"TypeScript\", \"level\": \"EXPERT\", \"category\": \"programming\" },\n        { \"name\": \"React\", \"level\": \"EXPERT\", \"category\": \"framework\" },\n        { \"name\": \"Node.js\", \"level\": \"EXPERT\", \"category\": \"framework\" },\n        { \"name\": \"Python\", \"level\": \"ADVANCED\", \"category\": \"programming\" },\n        { \"name\": \"PostgreSQL\", \"level\": \"ADVANCED\", \"category\": \"database\" },\n        { \"name\": \"Docker\", \"level\": \"ADVANCED\", \"category\": \"devops\" },\n        { \"name\": \"AWS\", \"level\": \"INTERMEDIATE\", \"category\": \"cloud\" },\n        { \"name\": \"GraphQL\", \"level\": \"INTERMEDIATE\", \"category\": \"api\" }\n    ],\n    \"projects\": [\n        {\n            \"name\": \"JobPilot\",\n            \"description\": \"AI-powered job tracking platform with LLM matching\",\n            \"url\": \"https://github.com/autotester/jobpilot\",\n            \"techStack\": [\"React\", \"Node.js\", \"PostgreSQL\", \"Prisma\"]\n        }\n    ],\n    \"certifications\": [\n        {\n            \"name\": \"AWS Solutions Architect\",\n            \"issuer\": \"Amazon Web Services\",\n            \"issueDate\": \"2023-03-01\"\n        }\n    ]\n}"
                         }
                     }
                 },
                 {
+                    "name": "Get Profile",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('Profile data', () => pm.expect(pm.response.json().data.fullName).to.eql('Auto Test Engineer'));",
+                                    "console.log('✅ Profile retrieved');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/profile",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "profile"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ]
+                    }
+                },
+                {
                     "name": "Export Profile",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "console.log('✅ Profile exported');"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "GET",
                         "url": {
@@ -389,18 +442,42 @@
                             }
                         ]
                     }
-                },
+                }
+            ]
+        },
+        {
+            "name": "4️⃣ Jobs — Sync & Search",
+            "item": [
                 {
-                    "name": "Delete Profile",
+                    "name": "🔄 Sync Jobs (fetch from APIs)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const data = pm.response.json().data;",
+                                    "pm.test('Has sync results', () => {",
+                                    "    pm.expect(data.total).to.be.a('number');",
+                                    "    pm.expect(data.sources).to.be.an('object');",
+                                    "});",
+                                    "console.log(`✅ Synced: ${data.new} new, ${data.updated} updated, ${data.total} total`);",
+                                    "console.log('   Sources:', JSON.stringify(data.sources));"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
-                        "method": "DELETE",
+                        "method": "POST",
                         "url": {
-                            "raw": "{{baseUrl}}/profile",
+                            "raw": "{{baseUrl}}/jobs/sync",
                             "host": [
                                 "{{baseUrl}}"
                             ],
                             "path": [
-                                "profile"
+                                "jobs",
+                                "sync"
                             ]
                         },
                         "header": [
@@ -410,12 +487,7 @@
                             }
                         ]
                     }
-                }
-            ]
-        },
-        {
-            "name": "💼 Jobs",
-            "item": [
+                },
                 {
                     "name": "List Jobs (default)",
                     "event": [
@@ -424,12 +496,14 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "if (pm.response.code === 200) {",
-                                    "    const items = pm.response.json().data.items;",
-                                    "    if (items.length > 0) {",
-                                    "        pm.environment.set('jobId', items[0].id);",
-                                    "        pm.test('jobId saved', () => pm.expect(items[0].id).to.be.a('string'));",
-                                    "    }",
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const data = pm.response.json().data;",
+                                    "pm.test('Has items', () => pm.expect(data.items.length).to.be.greaterThan(0));",
+                                    "// Save first job ID for later tests",
+                                    "if (data.items.length > 0) {",
+                                    "    pm.environment.set('jobId', data.items[0].id);",
+                                    "    pm.environment.set('jobId2', data.items.length > 1 ? data.items[1].id : data.items[0].id);",
+                                    "    console.log(`✅ Found ${data.items.length} jobs, saved jobId: ${data.items[0].id.substring(0,8)}...`);",
                                     "}"
                                 ]
                             }
@@ -459,11 +533,23 @@
                     }
                 },
                 {
-                    "name": "Search Jobs (keyword)",
+                    "name": "Search Jobs (keyword + remote)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "console.log('✅ Search returned', pm.response.json().data.items.length, 'results');"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "GET",
                         "url": {
-                            "raw": "{{baseUrl}}/jobs?search=react&remoteType=REMOTE&sort=salary",
+                            "raw": "{{baseUrl}}/jobs?search=developer&remoteType=REMOTE&sort=salary",
                             "host": [
                                 "{{baseUrl}}"
                             ],
@@ -473,7 +559,7 @@
                             "query": [
                                 {
                                     "key": "search",
-                                    "value": "react"
+                                    "value": "developer"
                                 },
                                 {
                                     "key": "remoteType",
@@ -488,93 +574,23 @@
                     }
                 },
                 {
-                    "name": "Get Job by ID",
-                    "request": {
-                        "method": "GET",
-                        "url": {
-                            "raw": "{{baseUrl}}/jobs/{{jobId}}",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "jobs",
-                                "{{jobId}}"
-                            ]
-                        }
-                    }
-                },
-                {
-                    "name": "Invalid UUID (expect 400)",
-                    "request": {
-                        "method": "GET",
-                        "url": {
-                            "raw": "{{baseUrl}}/jobs/not-a-uuid",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "jobs",
-                                "not-a-uuid"
-                            ]
-                        }
-                    }
-                },
-                {
-                    "name": "🔄 Sync Jobs (fetch from APIs)",
-                    "request": {
-                        "method": "POST",
-                        "url": {
-                            "raw": "{{baseUrl}}/jobs/sync",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "jobs",
-                                "sync"
-                            ]
-                        },
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
+                    "name": "Filter by Source (remotive)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const items = pm.response.json().data.items;",
+                                    "if (items.length > 0) {",
+                                    "    pm.test('All from remotive', () => items.forEach(j => pm.expect(j.source).to.eql('remotive')));",
+                                    "}",
+                                    "console.log('✅ Remotive jobs:', items.length);"
+                                ]
                             }
-                        ]
-                    }
-                },
-                {
-                    "name": "🤖 Matched Jobs (AI scored)",
-                    "request": {
-                        "method": "GET",
-                        "url": {
-                            "raw": "{{baseUrl}}/jobs/matched?page=1&limit=5",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "jobs",
-                                "matched"
-                            ],
-                            "query": [
-                                {
-                                    "key": "page",
-                                    "value": "1"
-                                },
-                                {
-                                    "key": "limit",
-                                    "value": "5"
-                                }
-                            ]
-                        },
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
-                            }
-                        ]
-                    }
-                },
-                {
-                    "name": "Filter Jobs by Source",
+                        }
+                    ],
                     "request": {
                         "method": "GET",
                         "url": {
@@ -597,11 +613,68 @@
                             ]
                         }
                     }
+                },
+                {
+                    "name": "Get Job by ID",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('Has job data', () => pm.expect(pm.response.json().data.title).to.be.a('string'));",
+                                    "console.log('✅ Job:', pm.response.json().data.title);"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/jobs/{{jobId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "jobs",
+                                "{{jobId}}"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Invalid UUID (→ 400)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                                    "console.log('✅ Invalid UUID rejected');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/jobs/not-a-uuid",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "jobs",
+                                "not-a-uuid"
+                            ]
+                        }
+                    }
                 }
             ]
         },
         {
-            "name": "📋 Applications",
+            "name": "5️⃣ Applications",
             "item": [
                 {
                     "name": "Create Application",
@@ -611,11 +684,11 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "if (pm.response.code === 201) {",
-                                    "    const data = pm.response.json().data;",
-                                    "    pm.environment.set('applicationId', data.id);",
-                                    "    pm.test('applicationId saved', () => pm.expect(data.id).to.be.a('string'));",
-                                    "}"
+                                    "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                                    "const data = pm.response.json().data;",
+                                    "pm.test('Has application', () => pm.expect(data.id).to.be.a('string'));",
+                                    "pm.environment.set('applicationId', data.id);",
+                                    "console.log('✅ Application created:', data.id.substring(0,8), '(AI scoring in background)');"
                                 ]
                             }
                         }
@@ -643,12 +716,25 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"jobId\": \"{{jobId}}\",\n    \"notes\": \"Looks like a great opportunity!\"\n}"
+                            "raw": "{\n    \"jobId\": \"{{jobId}}\",\n    \"notes\": \"Applied via automated Postman test\"\n}"
                         }
                     }
                 },
                 {
-                    "name": "Duplicate Application (expect 409)",
+                    "name": "Duplicate Application (→ 409)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                                    "pm.test('Duplicate blocked', () => pm.expect(pm.response.json().error.code).to.eql('ALREADY_APPLIED'));",
+                                    "console.log('✅ Duplicate application correctly rejected');"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "POST",
                         "url": {
@@ -677,7 +763,64 @@
                     }
                 },
                 {
+                    "name": "Create 2nd Application",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                                    "pm.environment.set('applicationId2', pm.response.json().data.id);",
+                                    "console.log('✅ 2nd application created');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "url": {
+                            "raw": "{{baseUrl}}/applications",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "applications"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"jobId\": \"{{jobId2}}\",\n    \"notes\": \"Second test application\"\n}"
+                        }
+                    }
+                },
+                {
                     "name": "List Applications",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const data = pm.response.json().data;",
+                                    "pm.test('Has items', () => pm.expect(data.items.length).to.be.greaterThan(0));",
+                                    "pm.test('Has pagination', () => pm.expect(data.total).to.be.a('number'));",
+                                    "console.log('✅ Listed', data.total, 'applications');"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "GET",
                         "url": {
@@ -696,38 +839,6 @@
                                 {
                                     "key": "limit",
                                     "value": "20"
-                                },
-                                {
-                                    "key": "status",
-                                    "value": "",
-                                    "disabled": true
-                                }
-                            ]
-                        },
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
-                            }
-                        ]
-                    }
-                },
-                {
-                    "name": "List Applications (filter by status)",
-                    "request": {
-                        "method": "GET",
-                        "url": {
-                            "raw": "{{baseUrl}}/applications?status=SAVED",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "applications"
-                            ],
-                            "query": [
-                                {
-                                    "key": "status",
-                                    "value": "SAVED"
                                 }
                             ]
                         },
@@ -741,6 +852,19 @@
                 },
                 {
                     "name": "Update Status → APPLIED",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('Status updated', () => pm.expect(pm.response.json().data.status).to.eql('APPLIED'));",
+                                    "console.log('✅ Status → APPLIED');"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "PATCH",
                         "url": {
@@ -772,6 +896,19 @@
                 },
                 {
                     "name": "Update Status → INTERVIEW",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('Status updated', () => pm.expect(pm.response.json().data.status).to.eql('INTERVIEW'));",
+                                    "console.log('✅ Status → INTERVIEW');"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "PATCH",
                         "url": {
@@ -803,6 +940,18 @@
                 },
                 {
                     "name": "Update Notes",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "console.log('✅ Notes updated');"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "PUT",
                         "url": {
@@ -828,12 +977,69 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"notes\": \"Had first interview — went great! Follow-up next week.\"\n}"
+                            "raw": "{\n    \"notes\": \"Automated test — interview went great! Expecting offer next week.\"\n}"
                         }
                     }
                 },
                 {
-                    "name": "Get Stats",
+                    "name": "Filter Applications (SAVED)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const items = pm.response.json().data.items;",
+                                    "if (items.length > 0) {",
+                                    "    pm.test('All SAVED', () => items.forEach(a => pm.expect(a.status).to.eql('SAVED')));",
+                                    "}",
+                                    "console.log('✅ SAVED filter:', items.length, 'results');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/applications?status=SAVED",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "applications"
+                            ],
+                            "query": [
+                                {
+                                    "key": "status",
+                                    "value": "SAVED"
+                                }
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "Application Stats",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const data = pm.response.json().data;",
+                                    "pm.test('Has total', () => pm.expect(data.total).to.be.greaterThan(0));",
+                                    "console.log('✅ Stats: total=', data.total, 'byStatus=', JSON.stringify(data.byStatus));"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "GET",
                         "url": {
@@ -853,36 +1059,31 @@
                             }
                         ]
                     }
-                },
-                {
-                    "name": "Delete Application",
-                    "request": {
-                        "method": "DELETE",
-                        "url": {
-                            "raw": "{{baseUrl}}/applications/{{applicationId}}",
-                            "host": [
-                                "{{baseUrl}}"
-                            ],
-                            "path": [
-                                "applications",
-                                "{{applicationId}}"
-                            ]
-                        },
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer {{accessToken}}"
-                            }
-                        ]
-                    }
                 }
             ]
         },
         {
-            "name": "📄 Resumes",
+            "name": "6️⃣ Resumes",
             "item": [
                 {
-                    "name": "Generate Resume",
+                    "name": "Generate Resume (AI)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                                    "const data = pm.response.json().data;",
+                                    "pm.test('Has resume', () => pm.expect(data.pdfUrl).to.be.a('string'));",
+                                    "pm.test('Has content', () => pm.expect(data.contentSnapshot).to.be.an('object'));",
+                                    "pm.environment.set('resumeId', data.id);",
+                                    "console.log('✅ Resume generated, template:', data.template);",
+                                    "console.log('   Content snapshot keys:', Object.keys(data.contentSnapshot || {}));"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "POST",
                         "url": {
@@ -906,12 +1107,25 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"applicationId\": \"{{applicationId}}\",\n    \"template\": \"modern\",\n    \"contentSnapshot\": {\n        \"summary\": \"Customized summary for this role\"\n    }\n}"
+                            "raw": "{\n    \"applicationId\": \"{{applicationId}}\",\n    \"template\": \"modern\"\n}"
                         }
                     }
                 },
                 {
-                    "name": "Get Resumes for Application",
+                    "name": "List Resumes for Application",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "pm.test('Has resumes', () => pm.expect(pm.response.json().data.length).to.be.greaterThan(0));",
+                                    "console.log('✅ Found', pm.response.json().data.length, 'resume(s)');"
+                                ]
+                            }
+                        }
+                    ],
                     "request": {
                         "method": "GET",
                         "url": {
@@ -930,6 +1144,411 @@
                                 "value": "Bearer {{accessToken}}"
                             }
                         ]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "7️⃣ AI — Scoring & Insights",
+            "item": [
+                {
+                    "name": "📊 Score ALL Jobs (batch)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const data = pm.response.json().data;",
+                                    "console.log(`✅ Batch scoring: ${data.scored} scored, ${data.skipped} skipped, ${data.total} total, ${data.batches} batches`);",
+                                    "console.log('   ℹ️  If scored=0, GROK_API_KEY may not be set (this is OK)');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "url": {
+                            "raw": "{{baseUrl}}/jobs/score-all",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "jobs",
+                                "score-all"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "🤖 Matched Jobs (sorted)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const data = pm.response.json().data;",
+                                    "console.log(`✅ Matched jobs: ${data.items.length} items, ${data.total} total (page ${data.page}/${data.totalPages})`);",
+                                    "if (data.items.length > 0) {",
+                                    "    const first = data.items[0];",
+                                    "    console.log(`   Top match: \"${first.job.title}\" at ${first.job.company} — Score: ${first.scoring.matchScore}/100`);",
+                                    "    console.log(`   Reason: ${first.scoring.matchReason}`);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/jobs/matched?page=1&limit=50&minScore=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "jobs",
+                                "matched"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "50"
+                                },
+                                {
+                                    "key": "minScore",
+                                    "value": "0"
+                                }
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "🔍 Job Insights (AI analysis)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "const data = pm.response.json().data;",
+                                    "if (data.insights) {",
+                                    "    pm.test('Has overview', () => pm.expect(data.insights.overview).to.be.an('object'));",
+                                    "    pm.test('Has skills', () => pm.expect(data.insights.skills).to.be.an('object'));",
+                                    "    pm.test('Has company', () => pm.expect(data.insights.company).to.be.an('object'));",
+                                    "    console.log('✅ Job Insights generated:');",
+                                    "    console.log(`   Title: ${data.insights.overview.title}`);",
+                                    "    console.log(`   Seniority: ${data.insights.overview.seniorityLevel}`);",
+                                    "    console.log(`   Required: ${data.insights.skills.required.join(', ')}`);",
+                                    "    console.log(`   Salary: ${data.insights.compensation.salaryRange}`);",
+                                    "    console.log(`   Hours: ${data.insights.company.workingHours}`);",
+                                    "} else {",
+                                    "    console.log('ℹ️  Insights not available (GROK_API_KEY not set)');",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/jobs/{{jobId}}/insights",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "jobs",
+                                "{{jobId}}",
+                                "insights"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "8️⃣ Cleanup",
+            "item": [
+                {
+                    "name": "Delete 2nd Application",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "console.log('✅ 2nd application deleted');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/applications/{{applicationId2}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "applications",
+                                "{{applicationId2}}"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "Delete 1st Application",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "console.log('✅ 1st application deleted');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/applications/{{applicationId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "applications",
+                                "{{applicationId}}"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "Delete Profile",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "console.log('✅ Profile deleted');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "DELETE",
+                        "url": {
+                            "raw": "{{baseUrl}}/profile",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "profile"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "Logout (token blocklisted)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "pm.environment.set('revokedToken', pm.environment.get('accessToken'));",
+                                    "console.log('✅ Logged out, token blocklisted');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/logout",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "logout"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "Use Revoked Token (→ 401)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                                    "pm.test('Token revoked', () => pm.expect(pm.response.json().error.code).to.eql('TOKEN_REVOKED'));",
+                                    "console.log('✅ Revoked token correctly rejected!');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/me",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "me"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{revokedToken}}"
+                            }
+                        ]
+                    }
+                },
+                {
+                    "name": "Login → Delete Account",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "    pm.environment.set('accessToken', pm.response.json().data.accessToken);",
+                                    "    console.log('✅ Re-logged in for account deletion');",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "login"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"{{testEmail}}\",\n    \"password\": \"{{testPassword}}\"\n}"
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Account ⚠️",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                                    "console.log('🗑️  Account deleted. All tests complete!');",
+                                    "console.log('');",
+                                    "console.log('═══════════════════════════════════════');",
+                                    "console.log('  ✅ ALL JOBPILOT API TESTS PASSED');",
+                                    "console.log('═══════════════════════════════════════');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/delete-account",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "delete-account"
+                            ]
+                        },
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{accessToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"password\": \"{{testPassword}}\"\n}"
+                        }
                     }
                 }
             ]

@@ -5,12 +5,12 @@ import { authenticate, AuthRequest } from "../../middleware/auth.js";
 import { getJobsQuerySchema } from "./jobs.validation.js";
 import * as jobsService from "./jobs.service.js";
 import { syncJobs } from "./jobFetcher.service.js";
-import { scoreJob } from "../ai/matching.service.js";
-import { prisma } from "../../db/index.js";
+import { scoreAllJobs, getMatchedJobs } from "../ai/batchScoring.service.js";
+import { getJobInsights } from "../ai/insights.service.js";
 
 export const jobsRouter: Router = Router();
 
-// GET /jobs — public route to search jobs
+// GET /jobs — public route to search/list jobs
 jobsRouter.get("/", validate(getJobsQuerySchema, "query"), async (req: Request, res: Response) => {
     const result = await jobsService.getJobs(req.query as unknown as Parameters<typeof jobsService.getJobs>[0]);
     res.json({ success: true, data: result });
@@ -22,88 +22,48 @@ jobsRouter.post("/sync", authenticate, async (_req: AuthRequest, res: Response) 
     res.json({ success: true, data: result });
 });
 
-// GET /jobs/matched — get jobs scored against user profile (authenticated)
-jobsRouter.get("/matched", authenticate, async (req: AuthRequest, res: Response) => {
-    // Get user's profile
-    const profile = await prisma.profile.findUnique({
-        where: { userId: req.user!.userId },
-        include: {
-            experiences: true,
-            educations: true,
-            skills: true,
-        },
-    });
+// POST /jobs/score-all — batch score ALL jobs against user profile (authenticated)
+jobsRouter.post("/score-all", authenticate, async (req: AuthRequest, res: Response) => {
+    const force = req.query.force === "true";
+    const result = await scoreAllJobs(req.user!.userId, force);
+    res.json({ success: true, data: result });
+});
 
-    if (!profile) {
-        res.status(400).json({
+// GET /jobs/matched — get pre-scored jobs sorted by score + salary (authenticated)
+jobsRouter.get("/matched", authenticate, async (req: AuthRequest, res: Response) => {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const minScore = Number(req.query.minScore) || 0;
+
+    const result = await getMatchedJobs(req.user!.userId, { page, limit, minScore });
+    res.json({ success: true, data: result });
+});
+
+// GET /jobs/:id/insights — AI-generated job analysis (authenticated)
+jobsRouter.get("/:id/insights", validateUUID("id"), authenticate, async (req: AuthRequest, res: Response) => {
+    const jobId = req.params.id as string;
+
+    // Verify job exists
+    const job = await jobsService.getJobById(jobId);
+    if (!job) {
+        res.status(404).json({
             success: false,
-            error: { code: "PROFILE_REQUIRED", message: "Create a profile first to get matched jobs" },
+            error: { code: "JOB_NOT_FOUND", message: "Job not found" },
         });
         return;
     }
 
-    // Get query params for pagination
-    const page = Number(req.query.page) || 1;
-    const limit = Math.min(Number(req.query.limit) || 10, 20); // Max 20 per batch (LLM is slow)
+    const insights = await getJobInsights(jobId);
 
-    // Get recent jobs
-    const jobs = await prisma.job.findMany({
-        where: { isActive: true },
-        orderBy: { postedAt: "desc" },
-        skip: (page - 1) * limit,
-        take: limit,
-    });
-
-    // Score each job against profile
-    const scoredJobs = [];
-    for (const job of jobs) {
-        const scores = await scoreJob(
-            {
-                fullName: profile.fullName,
-                headline: profile.headline,
-                summary: profile.summary,
-                location: profile.location,
-                skills: profile.skills.map((s) => ({ name: s.name, level: s.level })),
-                experiences: profile.experiences.map((e) => ({
-                    title: e.title,
-                    company: e.company,
-                    current: e.current,
-                    startDate: e.startDate.toISOString(),
-                    endDate: e.endDate?.toISOString() || null,
-                })),
-                educations: profile.educations.map((e) => ({
-                    institution: e.institution,
-                    degree: e.degree,
-                    field: e.field,
-                })),
-                preferences: profile.preferences,
-            },
-            {
-                title: job.title,
-                company: job.company,
-                location: job.location,
-                remoteType: job.remoteType,
-                salaryMin: job.salaryMin,
-                salaryMax: job.salaryMax,
-                description: job.description,
-                requirements: job.requirements,
-            }
-        );
-
-        scoredJobs.push({
-            ...job,
-            scoring: scores || { matchScore: null, note: "AI scoring unavailable — set GROK_API_KEY" },
+    if (!insights) {
+        res.json({
+            success: true,
+            data: { note: "AI insights unavailable — set GROK_API_KEY in .env", job },
         });
+        return;
     }
 
-    // Sort by matchScore descending
-    scoredJobs.sort((a, b) => {
-        const aScore = (a.scoring as any)?.matchScore ?? 0;
-        const bScore = (b.scoring as any)?.matchScore ?? 0;
-        return bScore - aScore;
-    });
-
-    res.json({ success: true, data: { items: scoredJobs, page, limit } });
+    res.json({ success: true, data: { job, insights } });
 });
 
 // GET /jobs/:id — public route to get a single job

@@ -27,6 +27,7 @@ model User {
   profile       Profile?
   applications  Application[]
   refreshTokens RefreshToken[]
+  jobScores     JobScore[]
 
   @@map("users")
 }
@@ -189,6 +190,8 @@ model Job {
   isActive       Boolean  @default(true) @map("is_active")
 
   applications Application[]
+  jobScores    JobScore[]
+  insight      JobInsight?
 
   @@index([isActive, postedAt(sort: Desc)])
   @@index([source, scrapedAt(sort: Desc)])
@@ -258,3 +261,46 @@ model Resume {
   @@index([applicationId])
   @@map("resumes")
 }
+
+// ─────────────────────────────────────
+// AI: Persistent Job Scores (per user)
+// ─────────────────────────────────────
+
+model JobScore {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  jobId           String   @map("job_id")
+  matchScore      Float    @map("match_score")
+  skillMatch      Float    @map("skill_match")
+  experienceMatch Float    @map("experience_match")
+  locationMatch   Float    @map("location_match")
+  salaryMatch     Float    @map("salary_match")
+  acceptanceScore Float    @map("acceptance_score")
+  matchReason     String   @map("match_reason")
+  missingSkills   String[] @default([]) @map("missing_skills")
+  strongPoints    String[] @default([]) @map("strong_points")
+  scoredAt        DateTime @default(now()) @map("scored_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId])
+  @@index([userId, matchScore(sort: Desc)])
+  @@map("job_scores")
+}
+
+// ─────────────────────────────────────
+// AI: Cached Job Insights
+// ─────────────────────────────────────
+
+model JobInsight {
+  id          String   @id @default(uuid())
+  jobId       String   @unique @map("job_id")
+  insights    Json     // structured AI analysis
+  generatedAt DateTime @default(now()) @map("generated_at")
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("job_insights")
+}
+
