@@ -2,7 +2,7 @@
 
 > **Base URL:** `http://localhost:3001`
 > **Content-Type:** `application/json`
-> **Auth:** Include `Authorization: Bearer <accessToken>` for protected endpoints (\ud83d\udd12)
+> **Auth:** Include `Authorization: Bearer <accessToken>` for protected endpoints (🔒)
 
 ---
 
@@ -54,11 +54,13 @@ All endpoints return a consistent response wrapper:
 | `INVALID_PARAM` | 400 | Route parameter is not a valid UUID |
 | `UNAUTHORIZED` | 401 | Missing or invalid `Authorization` header |
 | `TOKEN_EXPIRED` | 401 | JWT access token is expired or invalid |
+| `TOKEN_REVOKED` | 401 | Access token has been blocklisted (post-logout/password-change) |
 | `INVALID_CREDENTIALS` | 401 | Wrong email or password |
 | `INVALID_REFRESH_TOKEN` | 401 | Refresh token expired or already used |
 | `INVALID_PASSWORD` | 400 | Current password is wrong (password change) |
 | `USER_NOT_FOUND` | 404 | User doesn't exist |
 | `PROFILE_NOT_FOUND` | 404 | User has no profile yet |
+| `PROFILE_REQUIRED` | 400 | Profile must be created before using AI matching |
 | `JOB_NOT_FOUND` | 404 | Job ID doesn't exist |
 | `NOT_FOUND` | 404 | Application not found or not owned by user |
 | `EMAIL_EXISTS` | 409 | Registration with already-registered email |
@@ -81,7 +83,7 @@ All endpoints return a consistent response wrapper:
 5. When refreshToken expires (7 days) → redirect to login
 ```
 
-> **Important:** Each refresh token is **single-use**. After calling `/auth/refresh`, the old refresh token is permanently invalidated. Always store the new pair.
+> **Token Blocklist:** Logout, password change, and account deletion immediately blocklist the access token. Using a blocklisted token returns `TOKEN_REVOKED` (401). Each refresh token is **single-use**.
 
 ---
 
@@ -89,7 +91,7 @@ All endpoints return a consistent response wrapper:
 
 ---
 
-### \ud83d\udd13 POST `/auth/register`
+### 🔓 POST `/auth/register`
 
 Create a new account.
 
@@ -129,7 +131,7 @@ Create a new account.
 
 ---
 
-### \ud83d\udd13 POST `/auth/login`
+### 🔓 POST `/auth/login`
 
 **Request:**
 ```json
@@ -145,7 +147,7 @@ Create a new account.
 
 ---
 
-### \ud83d\udd13 POST `/auth/refresh`
+### 🔓 POST `/auth/refresh`
 
 Rotate tokens. Old refresh token is deleted.
 
@@ -162,7 +164,7 @@ Rotate tokens. Old refresh token is deleted.
 
 ---
 
-### \ud83d\udd12 GET `/auth/me`
+### 🔒 GET `/auth/me`
 
 Get the current authenticated user's info.
 
@@ -184,9 +186,9 @@ Get the current authenticated user's info.
 
 ---
 
-### \ud83d\udd12 POST `/auth/logout`
+### 🔒 POST `/auth/logout`
 
-Revoke all refresh tokens for the user.
+Blocklists the current access token and revokes all refresh tokens.
 
 **Request:** No body needed.
 
@@ -195,11 +197,13 @@ Revoke all refresh tokens for the user.
 { "success": true, "data": { "message": "Logged out successfully" } }
 ```
 
+> **Frontend:** Clear stored tokens. The used access token is immediately invalid (`TOKEN_REVOKED`).
+
 ---
 
-### \ud83d\udd12 POST `/auth/change-password`
+### 🔒 POST `/auth/change-password`
 
-Change the current user's password. Revokes all sessions.
+Change the current user's password. Blocklists current token and revokes all sessions.
 
 **Request:**
 ```json
@@ -209,8 +213,6 @@ Change the current user's password. Revokes all sessions.
 }
 ```
 
-**Validation:** `newPassword` has the same rules as registration password.
-
 **Response (200):**
 ```json
 { "success": true, "data": { "message": "Password changed. Please log in again." } }
@@ -218,13 +220,11 @@ Change the current user's password. Revokes all sessions.
 
 **Errors:** `INVALID_PASSWORD`, `VALIDATION_ERROR`
 
-> **Frontend note:** After success, clear stored tokens and redirect to login. All existing sessions are invalidated.
-
 ---
 
-### \ud83d\udd12 POST `/auth/delete-account`
+### 🔒 POST `/auth/delete-account`
 
-Permanently delete the user's account and all associated data.
+Permanently delete the user's account and all associated data. Blocklists current token.
 
 **Request:**
 ```json
@@ -240,11 +240,11 @@ Permanently delete the user's account and all associated data.
 
 **Errors:** `INVALID_PASSWORD`
 
-> **Frontend note:** This is irreversible. Show a confirmation dialog. All data (profile, applications, resumes) is cascade-deleted.
+> **Frontend:** Irreversible. Show a confirmation dialog. All data (profile, applications, resumes, scores) is cascade-deleted.
 
 ---
 
-### \ud83d\udd12 GET `/profile`
+### 🔒 GET `/profile`
 
 Get the authenticated user's full profile with all nested data.
 
@@ -269,10 +269,8 @@ Get the authenticated user's full profile with all nested data.
       "currency": "USD",
       "remoteType": "REMOTE",
       "visaRequired": false,
-      "industries": ["technology", "fintech"],
-      "locations": ["San Francisco", "Remote"]
+      "industries": ["technology", "fintech"]
     },
-    "updatedAt": "2026-02-20T...",
     "experiences": [
       {
         "id": "uuid",
@@ -282,72 +280,28 @@ Get the authenticated user's full profile with all nested data.
         "startDate": "2022-03-01T...",
         "endDate": null,
         "current": true,
-        "description": "Led platform dev...",
-        "sortOrder": 0
+        "description": "Led platform dev..."
       }
     ],
     "educations": [...],
     "skills": [
       { "id": "uuid", "name": "TypeScript", "level": "EXPERT", "category": "programming" }
     ],
-    "projects": [
-      { "id": "uuid", "name": "MyApp", "description": "...", "url": "https://...", "techStack": ["React", "Node.js"], "sortOrder": 0 }
-    ],
+    "projects": [...],
     "certifications": [...]
   }
 }
 ```
 
-**Returns `null` if no profile exists yet:**
-```json
-{ "success": true, "data": null }
-```
+**Returns `null` if no profile exists yet.**
 
 ---
 
-### \ud83d\udd12 PUT `/profile`
+### 🔒 PUT `/profile`
 
 Create or fully replace the user's profile (upsert). Transactional — all-or-nothing.
 
-**Request:**
-```json
-{
-  "fullName": "John Doe",
-  "headline": "Full-Stack Developer",
-  "summary": "Experienced developer...",
-  "phone": "+1-555-0123",
-  "location": "San Francisco, CA",
-  "linkedinUrl": "https://linkedin.com/in/johndoe",
-  "githubUrl": "https://github.com/johndoe",
-  "portfolioUrl": "https://johndoe.dev",
-  "preferences": {
-    "salaryMin": 120000,
-    "salaryMax": 200000,
-    "currency": "USD",
-    "remoteType": "REMOTE",
-    "visaRequired": false,
-    "industries": ["technology"],
-    "locations": ["Remote"]
-  },
-  "experiences": [
-    {
-      "company": "TechCorp",
-      "title": "Senior Developer",
-      "location": "SF",
-      "startDate": "2022-03-01",
-      "endDate": null,
-      "current": true,
-      "description": "Led platform dev..."
-    }
-  ],
-  "educations": [],
-  "skills": [
-    { "name": "TypeScript", "level": "EXPERT", "category": "programming" }
-  ],
-  "projects": [],
-  "certifications": []
-}
-```
+**Request:** Full profile object (see GET response shape for field names).
 
 **Limits:**
 | Field | Max |
@@ -360,15 +314,14 @@ Create or fully replace the user's profile (upsert). Transactional — all-or-no
 | `fullName` | 200 chars |
 | `headline` | 300 chars |
 | `summary` | 5000 chars |
-| `description` (any) | 5000 chars |
 
-> **Important:** This is a full replace operation. Always send the complete profile. Nested arrays are deleted and recreated.
+> **Important:** This is a full replace operation. Always send the complete profile payload.
 
-**Response (200):** Full profile object (same as GET).
+**Response (200):** Full profile object.
 
 ---
 
-### \ud83d\udd12 DELETE `/profile`
+### 🔒 DELETE `/profile`
 
 Delete the entire profile and all nested data. Idempotent.
 
@@ -379,7 +332,7 @@ Delete the entire profile and all nested data. Idempotent.
 
 ---
 
-### \ud83d\udd12 GET `/profile/export`
+### 🔒 GET `/profile/export`
 
 Export the profile as JSON (for Chrome extension / external use).
 
@@ -389,7 +342,7 @@ Export the profile as JSON (for Chrome extension / external use).
 
 ---
 
-### \ud83d\udd13 GET `/jobs`
+### 🔓 GET `/jobs`
 
 Search and list active jobs. No auth required.
 
@@ -403,10 +356,10 @@ Search and list active jobs. No auth required.
 | `location` | string | — | Filter by location (partial match) |
 | `remoteType` | enum | — | `REMOTE` \| `HYBRID` \| `ONSITE` |
 | `salaryMin` | number | — | Minimum salary filter |
-| `source` | string | — | Filter by job source |
+| `source` | string | — | Filter by job source (`remotive`, `arbeitnow`, `seed`) |
 | `sort` | enum | `date` | `date` \| `salary` \| `company` |
 
-**Example:** `GET /jobs?search=react&remoteType=REMOTE&limit=10&sort=salary`
+**Example:** `GET /jobs?search=react&remoteType=REMOTE&source=remotive&limit=10&sort=salary`
 
 **Response (200):**
 ```json
@@ -426,36 +379,234 @@ Search and list active jobs. No auth required.
         "salaryCurrency": "USD",
         "description": "Join Google's Cloud team...",
         "requirements": ["React", "TypeScript", "5+ years"],
-        "source": "seed",
-        "sourceUrl": null,
-        "applyUrl": "https://careers.google.com/...",
+        "source": "remotive",
+        "sourceUrl": "https://remotive.com/job/...",
+        "applyUrl": "https://...",
         "postedAt": "2026-02-18T...",
-        "scrapedAt": "2026-02-20T...",
-        "fingerprint": "senior-fe-google-mountainview",
+        "fingerprint": "remotive-12345",
         "isActive": true
       }
     ],
-    "total": 3,
+    "total": 342,
     "page": 1,
     "limit": 20,
-    "totalPages": 1
+    "totalPages": 18
   }
 }
 ```
 
 ---
 
-### \ud83d\udd13 GET `/jobs/:id`
+### 🔓 GET `/jobs/:id`
 
 Get a single job by UUID.
 
 **Response (200):** Single job object.
 
-**Errors:** `JOB_NOT_FOUND`, `INVALID_PARAM` (if ID isn't a UUID)
+**Errors:** `JOB_NOT_FOUND`, `INVALID_PARAM`
 
 ---
 
-### \ud83d\udd12 GET `/applications`
+### 🔒 POST `/jobs/sync`
+
+Fetch jobs from external APIs (Remotive + Arbeitnow) and upsert into the database.
+
+Deduplicates via the `fingerprint` field — safe to call multiple times.
+
+**Request:** No body needed.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "new": 287,
+    "updated": 13,
+    "total": 300,
+    "sources": {
+      "remotive": 193,
+      "arbeitnow": 107
+    },
+    "errors": []
+  }
+}
+```
+
+> **External APIs used:**
+> - **Remotive** (`remotive.com/api/remote-jobs`) — remote tech jobs, 4 categories: software-dev, devops, data, product
+> - **Arbeitnow** (`arbeitnow.com/api/job-board-api`) — European jobs, up to 3 pages
+
+---
+
+### 🔒 POST `/jobs/score-all`
+
+Batch-score ALL active jobs against the authenticated user's profile using Grok LLM.
+
+Processes 10 jobs per LLM call for efficiency. Scores are stored persistently in the `job_scores` table — no need to re-score.
+
+**Query Params:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `force` | boolean | `false` | Set `true` to re-score already-scored jobs |
+
+**Request:** No body needed.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "scored": 287,
+    "skipped": 13,
+    "total": 300,
+    "batches": 29
+  }
+}
+```
+
+> **Requires `GROK_API_KEY`** in `.env`. Returns `{ scored: 0 }` if not set.
+> **Requires a profile.** Returns error `PROFILE_NOT_FOUND` if no profile exists.
+
+---
+
+### 🔒 GET `/jobs/matched`
+
+Get pre-scored jobs for the current user, sorted by matchScore DESC then salaryMax DESC.
+
+Reads from the persistent `job_scores` table (call `/jobs/score-all` first).
+
+**Query Params:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `page` | number | 1 | Page number |
+| `limit` | number | 50 | Results per page (1-100) |
+| `minScore` | number | 0 | Minimum matchScore filter (0-100) |
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "job": {
+          "id": "uuid",
+          "title": "Senior React Developer",
+          "company": "Stripe",
+          "location": "Remote",
+          "remoteType": "REMOTE",
+          "salaryMin": 180000,
+          "salaryMax": 250000,
+          "salaryCurrency": "USD",
+          "description": "...",
+          "requirements": ["React", "TypeScript", "Node.js"],
+          "source": "remotive",
+          "applyUrl": "https://..."
+        },
+        "scoring": {
+          "matchScore": 92,
+          "skillMatch": 95,
+          "experienceMatch": 88,
+          "locationMatch": 100,
+          "salaryMatch": 85,
+          "acceptanceScore": 78,
+          "matchReason": "Strong match — candidate has 7 years React/TypeScript experience, exactly matching the Senior level. Remote preference aligns perfectly.",
+          "missingSkills": ["Kubernetes", "gRPC"],
+          "strongPoints": ["TypeScript Expert", "React Expert", "Team leadership"],
+          "scoredAt": "2026-03-05T..."
+        }
+      }
+    ],
+    "total": 287,
+    "page": 1,
+    "limit": 50,
+    "totalPages": 6
+  }
+}
+```
+
+**Scoring dimensions:**
+
+| Field | Range | Description |
+|-------|-------|-------------|
+| `matchScore` | 0-100 | Overall fit (weighted combination) |
+| `skillMatch` | 0-100 | How well user skills match job requirements |
+| `experienceMatch` | 0-100 | Years of experience alignment |
+| `locationMatch` | 0-100 | Location/remote preference fit |
+| `salaryMatch` | 0-100 | Salary range overlap (75 if no data) |
+| `acceptanceScore` | 0-100 | Estimated likelihood of getting hired |
+| `matchReason` | string | 1-2 sentence explanation |
+| `missingSkills` | string[] | Skills from job the user lacks |
+| `strongPoints` | string[] | User strengths that match well |
+
+---
+
+### 🔒 GET `/jobs/:id/insights`
+
+Get AI-generated comprehensive job analysis. Results are cached for 7 days.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "job": { ... },
+    "insights": {
+      "overview": {
+        "title": "Senior React Developer",
+        "workType": "Full-time Remote",
+        "seniorityLevel": "Senior",
+        "estimatedYOE": "5-7 years",
+        "teamSize": "Medium (10-20)"
+      },
+      "skills": {
+        "required": ["React", "TypeScript", "Node.js"],
+        "preferred": ["GraphQL", "AWS", "Docker"],
+        "techStack": ["React 18", "Next.js", "PostgreSQL", "Redis"]
+      },
+      "responsibilities": [
+        "Lead frontend architecture decisions",
+        "Build and maintain React component library",
+        "Collaborate with backend team on API design",
+        "Mentor junior developers"
+      ],
+      "compensation": {
+        "salaryRange": "$180,000 - $250,000",
+        "currency": "USD",
+        "benefits": ["Health insurance", "401k matching", "Equity", "Home office stipend"],
+        "estimatedLeaves": "Unlimited PTO (standard for tech)"
+      },
+      "company": {
+        "name": "Stripe",
+        "industry": "Fintech / Payments",
+        "reputation": "Stripe is a leading payments infrastructure company valued at $50B+. Known for engineering excellence and developer-first culture.",
+        "culture": "Engineering-driven, high ownership, fast-paced. Strong focus on code quality and developer experience.",
+        "workingHours": "Flexible — async-friendly with core hours overlap",
+        "growthOpportunities": "Clear IC track (Senior → Staff → Principal). Strong internal mobility."
+      },
+      "applicationTips": [
+        "Highlight experience building component libraries or design systems",
+        "Mention any fintech or payments domain experience",
+        "Include metrics: 'Reduced bundle size by X%' or 'Improved load time by Xs'"
+      ],
+      "redFlags": [],
+      "greenFlags": [
+        "Clear salary range posted",
+        "Remote-first with established async culture",
+        "Engineering blog indicates strong technical investment"
+      ]
+    }
+  }
+}
+```
+
+> Without `GROK_API_KEY`, returns `{ job, note: "AI insights unavailable" }`.
+
+---
+
+### 🔒 GET `/applications`
 
 List authenticated user's applications with pagination.
 
@@ -480,7 +631,15 @@ List authenticated user's applications with pagination.
         "userId": "uuid",
         "jobId": "uuid",
         "status": "APPLIED",
-        "matchScore": null,
+        "matchScore": 85,
+        "skillMatch": 90,
+        "experienceMatch": 80,
+        "locationMatch": 100,
+        "salaryMatch": 75,
+        "acceptanceScore": 72,
+        "matchReason": "Strong skill alignment...",
+        "missingSkills": ["Kubernetes"],
+        "strongPoints": ["TypeScript Expert", "Team lead experience"],
         "notes": "Great culture fit",
         "appliedAt": "2026-02-20T...",
         "updatedAt": "2026-02-20T...",
@@ -496,11 +655,13 @@ List authenticated user's applications with pagination.
 }
 ```
 
+> Applications are **auto-scored in the background** when created (if GROK_API_KEY is set). Scoring fields will be `null` initially and populated within a few seconds.
+
 ---
 
-### \ud83d\udd12 POST `/applications`
+### 🔒 POST `/applications`
 
-Create a new application (save a job).
+Create a new application (save a job). Auto-scores against profile in background.
 
 **Request:**
 ```json
@@ -512,13 +673,13 @@ Create a new application (save a job).
 
 **Validation:** `notes` max 5000 chars.
 
-**Response (201):** Application object with nested `job`.
+**Response (201):** Application object with nested `job`. AI scoring fields populate asynchronously.
 
 **Errors:** `ALREADY_APPLIED`, `VALIDATION_ERROR`
 
 ---
 
-### \ud83d\udd12 PATCH `/applications/:id/status`
+### 🔒 PATCH `/applications/:id/status`
 
 Update an application's status.
 
@@ -535,7 +696,7 @@ Update an application's status.
 
 ---
 
-### \ud83d\udd12 PUT `/applications/:id/notes`
+### 🔒 PUT `/applications/:id/notes`
 
 Update an application's notes.
 
@@ -552,7 +713,7 @@ Update an application's notes.
 
 ---
 
-### \ud83d\udd12 DELETE `/applications/:id`
+### 🔒 DELETE `/applications/:id`
 
 Delete an application and its associated resumes.
 
@@ -565,7 +726,7 @@ Delete an application and its associated resumes.
 
 ---
 
-### \ud83d\udd12 GET `/applications/stats`
+### 🔒 GET `/applications/stats`
 
 Get aggregated application statistics.
 
@@ -588,7 +749,7 @@ Get aggregated application statistics.
 
 ---
 
-### \ud83d\udd12 GET `/resumes/:applicationId`
+### 🔒 GET `/resumes/:applicationId`
 
 Get all generated resumes for a specific application.
 
@@ -602,40 +763,85 @@ Get all generated resumes for a specific application.
       "applicationId": "uuid",
       "pdfUrl": "https://storage.example.com/resumes/...",
       "template": "modern",
-      "contentSnapshot": { ... },
+      "contentSnapshot": {
+        "professionalSummary": "Senior engineer with 7+ years React/TypeScript...",
+        "experiences": [
+          {
+            "title": "Senior Software Engineer",
+            "company": "TechCorp",
+            "period": "2021 - Present",
+            "bullets": [
+              "Led development of platform serving 2M+ users, reducing API latency by 40%",
+              "Architected microservices migration improving deployment frequency by 3x"
+            ]
+          }
+        ],
+        "skills": {
+          "highlighted": ["React", "TypeScript", "Node.js"],
+          "additional": ["PostgreSQL", "Docker", "AWS"]
+        },
+        "education": [
+          { "degree": "BS Computer Science", "institution": "MIT", "year": "2018" }
+        ]
+      },
       "generatedAt": "2026-02-20T..."
     }
   ]
 }
 ```
 
-**Errors:** `APPLICATION_NOT_FOUND`, `INVALID_PARAM`
-
 ---
 
-### \ud83d\udd12 POST `/resumes`
+### 🔒 POST `/resumes`
 
-Generate a new resume for an application.
+Generate a new resume for an application. If `GROK_API_KEY` is set and no `contentSnapshot` is provided, the LLM auto-generates tailored content based on the user's profile + target job.
 
 **Request:**
 ```json
 {
   "applicationId": "uuid-of-application",
   "template": "modern",
-  "contentSnapshot": { "summary": "Custom summary..." }
+  "contentSnapshot": null
 }
 ```
 
-**Templates available:** `modern` (default), `classic`, `minimal`
+**Templates:** `modern` (default), `classic`, `minimal`
 
-**Validation:**
-- `contentSnapshot` max 50 keys, values max 10K chars each
+| Param | Required | Description |
+|-------|----------|-------------|
+| `applicationId` | yes | Application UUID |
+| `template` | no | Resume template |
+| `contentSnapshot` | no | Pass custom content or omit for AI generation |
 
-**Response (201):** Resume object.
+**Response (201):** Resume object with LLM-generated `contentSnapshot` (see GET response above).
 
-**Errors:** `APPLICATION_NOT_FOUND`, `VALIDATION_ERROR`
+> **Note:** PDF generation is currently mocked. `pdfUrl` returns a placeholder URL.
+> Without `GROK_API_KEY`, `contentSnapshot` will be `{}` unless manually provided.
 
-> **Note:** PDF generation is currently mocked. The `pdfUrl` returns a placeholder URL.
+---
+
+## Environment Variables
+
+```bash
+# Database
+DATABASE_URL="postgresql://..."
+
+# Redis
+REDIS_URL="redis://localhost:6379"
+
+# Auth
+JWT_SECRET="your-64-char-hex-secret"
+JWT_EXPIRES_IN="15m"
+REFRESH_TOKEN_EXPIRES_IN="7d"
+
+# App
+NODE_ENV="development"
+API_PORT=3001
+
+# AI (optional — features degrade gracefully without it)
+GROK_API_KEY="xai-..."         # Get from https://console.x.ai
+GROK_MODEL="grok-3-fast"       # or "grok-3" for higher quality
+```
 
 ---
 
@@ -646,70 +852,33 @@ Generate a new resume for an application.
 | **Global** | 100 requests / 15 minutes per IP |
 | **Auth routes** (`/auth/*`) | 20 requests / 15 minutes per IP |
 
-When rate-limited, you'll receive:
-```json
-{
-  "success": false,
-  "error": {
-    "code": "TOO_MANY_REQUESTS",
-    "message": "Too many requests, please try again later."
-  }
-}
+---
+
+## Typical Frontend Flow
+
+```
+1. Register/Login → store tokens
+2. Upsert profile → PUT /profile (skills, experience, ed, preferences)
+3. Sync jobs → POST /jobs/sync (fetches 300+ real jobs)
+4. Score all → POST /jobs/score-all (batch AI scoring)
+5. Browse matched → GET /jobs/matched?limit=50 (sorted by score)
+6. View insights → GET /jobs/:id/insights (detailed AI analysis)
+7. Apply → POST /applications { jobId } (auto-scored in background)
+8. Generate resume → POST /resumes { applicationId } (AI-tailored content)
+9. Track → PATCH /applications/:id/status (SAVED → APPLIED → INTERVIEW → ...)
 ```
 
 ---
 
-## TypeScript Types
-
-These interfaces define the API contract. Both frontend and backend repos should share identical copies.
-
-```typescript
-// Auth
-interface RegisterRequest { email: string; password: string; name: string; }
-interface LoginRequest { email: string; password: string; }
-interface AuthResponse { accessToken: string; refreshToken: string; user: UserPublic; }
-interface UserPublic { id: string; email: string; name: string | null; avatarUrl: string | null; plan: "FREE" | "PRO" | "PREMIUM"; }
-
-// Profile
-interface ProfileData {
-  fullName: string;
-  headline?: string; summary?: string; phone?: string; location?: string;
-  linkedinUrl?: string; githubUrl?: string; portfolioUrl?: string;
-  preferences?: JobPreferences;
-  experiences: ExperienceData[];
-  educations: EducationData[];
-  skills: SkillData[];
-  projects: ProjectData[];
-  certifications: CertificationData[];
-}
-
-// Jobs
-interface JobListing {
-  id: string; title: string; company: string; companyLogoUrl?: string;
-  location?: string; remoteType?: "REMOTE" | "HYBRID" | "ONSITE";
-  salaryMin?: number; salaryMax?: number; salaryCurrency?: string;
-  description: string; requirements: string[];
-  source: string; applyUrl: string; postedAt?: string; matchScore?: number;
-}
-
-// Applications
-type ApplicationStatusType = "SAVED" | "APPLIED" | "SCREENING" | "INTERVIEW" | "OFFER" | "ACCEPTED" | "DECLINED" | "REJECTED";
-
-// API Wrappers
-interface ApiResponse<T> { success: boolean; data?: T; error?: { code: string; message: string; }; }
-interface PaginatedResponse<T> { items: T[]; total: number; page: number; limit: number; totalPages: number; }
-```
-
----
-
-## Quick Setup for Frontend Dev
+## Quick Setup
 
 ```bash
-# In the API repo
 docker compose up -d       # Start PostgreSQL + Redis
 npx prisma db push         # Push schema
-npm run db:seed            # Seed demo data
-npm run dev                # API running at :3001
+npm run db:seed            # Seed demo data (3 sample jobs)
+npm run dev                # API at :3001
 ```
 
 **Demo login:** `demo@jobpilot.dev` / `Test1234`
+
+**To get real jobs:** Call `POST /jobs/sync` after logging in — fetches 300+ jobs from Remotive + Arbeitnow.
