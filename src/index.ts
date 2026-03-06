@@ -1,4 +1,6 @@
 import "dotenv/config";
+import path from "path";
+import { fileURLToPath } from "url";
 import express from "express";
 import "express-async-errors";
 import cors from "cors";
@@ -16,7 +18,18 @@ const app: express.Express = express();
 const PORT = process.env.API_PORT || 3001;
 
 // ─── Middleware ────────────────────────
-app.use(helmet());
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            imgSrc: ["'self'", "data:", "https://*"],
+            connectSrc: ["'self'"],
+        },
+    },
+}));
 app.use(cors({
     origin: process.env.WEB_URL || "http://localhost:3000",
     credentials: true,
@@ -43,7 +56,17 @@ const authLimiter = rateLimit({
 
 app.use(globalLimiter);
 
+// ─── API Docs (root) ──────────────────
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.use(express.static(path.join(__dirname, "../public")));
+app.get("/", (_req, res) => {
+    res.sendFile(path.join(__dirname, "../public/docs.html"));
+});
+
 // ─── Health Check ──────────────────────
+app.get("/g", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
 app.get("/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
 });

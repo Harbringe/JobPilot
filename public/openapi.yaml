@@ -1,0 +1,665 @@
+openapi: 3.1.0
+info:
+  title: JobPilot API
+  version: 0.1.0
+  description: |
+    AI-powered job tracking platform with LLM-based matching, batch scoring, and intelligent resume generation. Built with Express, Prisma, PostgreSQL, and Groq AI.
+
+    ### 🔑 Authentication
+    Most endpoints require a JWT access token. Use the `/auth/login` or `/auth/register` endpoints to obtain tokens.
+    Click the **Authorize** button below or in the request panel to set your Bearer token.
+servers:
+  - url: http://localhost:3001
+    description: Local Dev Server
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Enter your JWT access token here.
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                type: object
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+        avatarUrl:
+          type: string
+          nullable: true
+        plan:
+          type: string
+          enum: [FREE, PRO, PREMIUM]
+    Profile:
+      type: object
+      properties:
+        fullName:
+          type: string
+        headline:
+          type: string
+        summary:
+          type: string
+        location:
+          type: string
+        preferences:
+          type: object
+        skills:
+          type: array
+          items:
+            type: object
+        experiences:
+          type: array
+          items:
+            type: object
+        educations:
+          type: array
+          items:
+            type: object
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        company:
+          type: string
+        location:
+          type: string
+        remoteType:
+          type: string
+          enum: [REMOTE, HYBRID, ONSITE]
+        salaryMin:
+          type: integer
+        salaryMax:
+          type: integer
+        salaryCurrency:
+          type: string
+        description:
+          type: string
+        requirements:
+          type: array
+          items:
+            type: string
+        source:
+          type: string
+        applyUrl:
+          type: string
+    Application:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [SAVED, APPLIED, SCREENING, INTERVIEW, OFFER, ACCEPTED, DECLINED, REJECTED]
+        notes:
+          type: string
+        job:
+          $ref: '#/components/schemas/Job'
+        appliedAt:
+          type: string
+          format: date-time
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      summary: Register Account
+      tags: [Auth]
+      security: []
+      description: Create a new user account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  example: "Test1234"
+                name:
+                  type: string
+                  example: "John Doe"
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      accessToken:
+                        type: string
+                      refreshToken:
+                        type: string
+                      user:
+                        $ref: '#/components/schemas/User'
+  /auth/login:
+    post:
+      summary: Login
+      tags: [Auth]
+      security: []
+      description: Authenticate user and receive tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Logged in successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      accessToken:
+                        type: string
+                      refreshToken:
+                        type: string
+                      user:
+                        $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/refresh:
+    post:
+      summary: Refresh Token
+      tags: [Auth]
+      security: []
+      description: Exchange a valid refresh token for a new token pair.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed
+  /auth/me:
+    get:
+      summary: Get Current User
+      tags: [Auth]
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/User'
+  /auth/logout:
+    post:
+      summary: Logout
+      tags: [Auth]
+      description: Blocklists the current access token and revokes refresh tokens.
+      responses:
+        '200':
+          description: Logged out
+  /auth/change-password:
+    post:
+      summary: Change Password
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+      responses:
+        '200':
+          description: Password changed
+  /auth/delete-account:
+    post:
+      summary: Delete Account
+      tags: [Auth]
+      description: Permanently delete the user account and all associated data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Account deleted
+
+  /profile:
+    get:
+      summary: Get Profile
+      tags: [Profile]
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Profile'
+    put:
+      summary: Upsert Profile
+      tags: [Profile]
+      description: Create or completely replace the user's profile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Profile'
+      responses:
+        '200':
+          description: Profile saved
+    delete:
+      summary: Delete Profile
+      tags: [Profile]
+      responses:
+        '200':
+          description: Profile deleted
+  /profile/export:
+    get:
+      summary: Export Profile
+      tags: [Profile]
+      responses:
+        '200':
+          description: Profile exported
+
+  /jobs:
+    get:
+      summary: Search Jobs
+      tags: [Jobs]
+      security: []
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: remoteType
+          schema:
+            type: string
+            enum: [REMOTE, HYBRID, ONSITE]
+        - in: query
+          name: source
+          schema:
+            type: string
+            enum: [remotive, arbeitnow, seed]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Job'
+                      total:
+                        type: integer
+                      page:
+                        type: integer
+                      totalPages:
+                        type: integer
+
+  /jobs/{id}:
+    get:
+      summary: Get Job by ID
+      tags: [Jobs]
+      security: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Job'
+  /jobs/sync:
+    post:
+      summary: Sync Jobs (External APIs)
+      tags: [Jobs]
+      description: Fetch new jobs from Remotive and Arbeitnow APIs.
+      responses:
+        '200':
+          description: Sync summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      new:
+                        type: integer
+                      updated:
+                        type: integer
+                      total:
+                        type: integer
+  /jobs/score-all:
+    post:
+      summary: Score All Jobs (AI)
+      tags: [Jobs, AI]
+      description: Batch score all unscored jobs in the database against the user's profile using the LLM.
+      parameters:
+        - in: query
+          name: force
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Scoring summary
+  /jobs/matched:
+    get:
+      summary: Get Matched Jobs
+      tags: [Jobs, AI]
+      description: Get pre-scored jobs sorted by match score.
+      parameters:
+        - in: query
+          name: minScore
+          schema:
+            type: integer
+            default: 0
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Matched jobs
+  /jobs/{id}/insights:
+    get:
+      summary: AI Job Insights
+      tags: [Jobs, AI]
+      description: Generates or retrieves detailed AI analysis for a specific job.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job insights and analysis
+
+  /applications:
+    get:
+      summary: List Applications
+      tags: [Applications]
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [SAVED, APPLIED, SCREENING, INTERVIEW, OFFER, ACCEPTED, DECLINED, REJECTED]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: List of applications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Application'
+    post:
+      summary: Create Application
+      tags: [Applications]
+      description: Adds a job to your applications (auto-scores in background).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jobId]
+              properties:
+                jobId:
+                  type: string
+                  format: uuid
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: Application created
+  /applications/{id}/status:
+    patch:
+      summary: Update Status
+      tags: [Applications]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [SAVED, APPLIED, SCREENING, INTERVIEW, OFFER, ACCEPTED, DECLINED, REJECTED]
+      responses:
+        '200':
+          description: Status updated
+  /applications/{id}/notes:
+    put:
+      summary: Update Notes
+      tags: [Applications]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [notes]
+              properties:
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Notes updated
+  /applications/stats:
+    get:
+      summary: Application Statistics
+      tags: [Applications]
+      responses:
+        '200':
+          description: Statistics
+  /applications/{id}:
+    delete:
+      summary: Delete Application
+      tags: [Applications]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted
+
+  /resumes:
+    post:
+      summary: Generate Resume
+      tags: [Resumes, AI]
+      description: Generates an AI-tailored resume based on the profile and the target job.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [applicationId]
+              properties:
+                applicationId:
+                  type: string
+                  format: uuid
+                template:
+                  type: string
+                  default: modern
+      responses:
+        '201':
+          description: Resume generated
+  /resumes/{applicationId}:
+    get:
+      summary: List Resumes
+      tags: [Resumes]
+      parameters:
+        - in: path
+          name: applicationId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of resumes
