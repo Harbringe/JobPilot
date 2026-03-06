@@ -1,14 +1,15 @@
 /**
- * Grok (xAI) API Client — OpenAI-compatible.
- * Uses the /v1/chat/completions endpoint.
+ * Groq API Client — OpenAI-compatible.
+ * Uses the /openai/v1/chat/completions endpoint.
+ * Free tier: https://console.groq.com
  */
 
-const GROK_BASE_URL = "https://api.x.ai/v1";
-const GROK_API_KEY = process.env.GROK_API_KEY;
-const GROK_MODEL = process.env.GROK_MODEL || "grok-3-fast";
+const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 
 export function isGrokConfigured(): boolean {
-    return !!GROK_API_KEY;
+    return !!GROQ_API_KEY;
 }
 
 interface ChatMessage {
@@ -31,29 +32,29 @@ interface GrokResponse {
 }
 
 /**
- * Send a chat completion request to Grok and get a JSON response.
+ * Send a chat completion request to Groq and get a JSON response.
  * Automatically retries once on failure.
  */
 export async function grokChat(
     messages: ChatMessage[],
     options: { temperature?: number; maxTokens?: number } = {}
 ): Promise<string> {
-    if (!GROK_API_KEY) {
-        throw new Error("GROK_NOT_CONFIGURED");
+    if (!GROQ_API_KEY) {
+        throw new Error("GROQ_NOT_CONFIGURED");
     }
 
     const { temperature = 0.3, maxTokens = 2000 } = options;
 
     for (let attempt = 0; attempt < 2; attempt++) {
         try {
-            const res = await fetch(`${GROK_BASE_URL}/chat/completions`, {
+            const res = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    Authorization: `Bearer ${GROK_API_KEY}`,
+                    Authorization: `Bearer ${GROQ_API_KEY}`,
                 },
                 body: JSON.stringify({
-                    model: GROK_MODEL,
+                    model: GROQ_MODEL,
                     messages,
                     temperature,
                     max_tokens: maxTokens,
@@ -63,22 +64,22 @@ export async function grokChat(
 
             if (!res.ok) {
                 const errorText = await res.text();
-                throw new Error(`Grok API error ${res.status}: ${errorText}`);
+                throw new Error(`Groq API error ${res.status}: ${errorText}`);
             }
 
             const data = (await res.json()) as GrokResponse;
             return data.choices[0].message.content;
         } catch (err) {
             if (attempt === 0) {
-                console.warn("⚠️  Grok API retry:", (err as Error).message);
-                await new Promise((r) => setTimeout(r, 1000)); // wait 1s before retry
+                console.warn("⚠️  Groq API retry:", (err as Error).message);
+                await new Promise((r) => setTimeout(r, 1000));
                 continue;
             }
             throw err;
         }
     }
 
-    throw new Error("Grok API: all retries failed");
+    throw new Error("Groq API: all retries failed");
 }
 
 /**
@@ -92,7 +93,7 @@ export async function grokJSON<T>(
         const content = await grokChat(messages, options);
         return JSON.parse(content) as T;
     } catch (err) {
-        console.error("❌ Grok JSON parse failed:", (err as Error).message);
+        console.error("❌ Groq JSON parse failed:", (err as Error).message);
         return null;
     }
 }
