@@ -3,6 +3,8 @@
  * Fetches remote software development jobs.
  */
 
+import { htmlToMarkdown } from "../../../lib/html-to-markdown.js";
+
 interface RemotiveJob {
     id: number;
     url: string;
@@ -71,7 +73,7 @@ function normalizeRemotiveJob(job: RemotiveJob): NormalizedJob {
         salaryMin: min,
         salaryMax: max,
         salaryCurrency: "USD",
-        description: job.description.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().substring(0, 10000),
+        description: htmlToMarkdown(job.description),
         requirements: job.tags?.slice(0, 30) || [],
         source: "remotive",
         sourceUrl: job.url,
@@ -87,7 +89,8 @@ export async function fetchRemotiveJobs(): Promise<NormalizedJob[]> {
     for (const category of categories) {
         try {
             const res = await fetch(
-                `https://remotive.com/api/remote-jobs?category=${category}&limit=50`
+                `https://remotive.com/api/remote-jobs?category=${category}&limit=50`,
+                { signal: AbortSignal.timeout(15_000) }
             );
             if (!res.ok) {
                 console.warn(`⚠️  Remotive (${category}): HTTP ${res.status}`);

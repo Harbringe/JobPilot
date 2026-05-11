@@ -1,8 +1,9 @@
 /**
- * AI Matching Service — scores jobs against user profiles using Grok LLM.
+ * AI Matching Service — scores jobs against user profiles using the user's
+ * configured AI provider (Groq / Anthropic / Gemini / OpenAI-compat).
  */
 
-import { grokJSON, isGrokConfigured } from "./grok.client.js";
+import { getAIClient } from "./providers/index.js";
 
 export interface MatchScores {
     matchScore: number;       // 0-100 overall fit
@@ -105,18 +106,17 @@ ${job.description.substring(0, 3000)}`.trim();
 }
 
 /**
- * Score a job against a user profile using Grok LLM.
- * Returns null if Grok is not configured — the caller should handle gracefully.
+ * Score a job against a user profile using the user's configured AI provider.
+ * Returns null if no provider is configured — the caller should handle gracefully.
  */
-export async function scoreJob(profile: ProfileSummary, job: JobSummary): Promise<MatchScores | null> {
-    if (!isGrokConfigured()) {
-        return null;
-    }
+export async function scoreJob(userId: string, profile: ProfileSummary, job: JobSummary): Promise<MatchScores | null> {
+    const ai = await getAIClient(userId);
+    if (!ai) return null;
 
     const profileText = buildProfileText(profile);
     const jobText = buildJobText(job);
 
-    const result = await grokJSON<MatchScores>([
+    const result = await ai.chatJSON<MatchScores>([
         { role: "system", content: MATCHING_SYSTEM_PROMPT },
         { role: "user", content: `${profileText}\n\n---\n\n${jobText}\n\nAnalyze this candidate-job match and provide scores.` },
     ], { temperature: 0.2, maxTokens: 1000 });
@@ -146,16 +146,18 @@ function clamp(val: number, min = 0, max = 100): number {
  * Processes sequentially to avoid rate limits.
  */
 export async function scoreJobs(
+    userId: string,
     profile: ProfileSummary,
     jobs: JobSummary[]
 ): Promise<Map<string, MatchScores>> {
     const results = new Map<string, MatchScores>();
 
-    if (!isGrokConfigured()) return results;
+    const ai = await getAIClient(userId);
+    if (!ai) return results;
 
     for (const job of jobs) {
         const key = `${job.title}-${job.company}`;
-        const scores = await scoreJob(profile, job);
+        const scores = await scoreJob(userId, profile, job);
         if (scores) {
             results.set(key, scores);
         }

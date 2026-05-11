@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>{{fullName}} — Resume</title>
+<style>
+  @page { size: A4; margin: 14mm 16mm; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: #111;
+    background: #fff;
+    font-family: "DM Sans", "Helvetica", "Arial", sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.4;
+  }
+  h1, h2, h3 { font-family: "Space Grotesk", "Helvetica", "Arial", sans-serif; font-weight: 600; }
+  h1 { font-size: 22pt; margin: 0 0 2mm; letter-spacing: -0.01em; }
+  h2 { font-size: 12pt; margin: 6mm 0 2mm; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #222; padding-bottom: 1mm; }
+  h3 { font-size: 11pt; margin: 3mm 0 0; }
+  p, li { margin: 0 0 1.5mm; }
+  ul { padding-left: 5mm; margin: 1mm 0 2mm; }
+  .header-meta { font-size: 9.5pt; color: #444; }
+  .header-meta a { color: #444; text-decoration: none; }
+  .summary { margin-top: 3mm; }
+  .role { display: flex; justify-content: space-between; align-items: baseline; gap: 6mm; }
+  .role .period { font-size: 9.5pt; color: #555; white-space: nowrap; }
+  .role .company { font-size: 10pt; color: #333; margin: 0 0 1mm; }
+  .keywords { font-size: 9pt; color: #555; margin-top: 2mm; }
+  .skill-row { display: flex; flex-wrap: wrap; gap: 2mm 4mm; }
+  .skill-row span { background: #f3f3f3; padding: 0.5mm 2mm; border-radius: 1mm; font-size: 9.5pt; }
+  .education-line { display: flex; justify-content: space-between; gap: 6mm; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>{{fullName}}</h1>
+    <div class="header-meta">
+      {{headline}}{{#if location}} &nbsp;·&nbsp; {{location}}{{/if}}
+      <br />
+      {{#if email}}{{email}}{{/if}}{{#if phone}} &nbsp;·&nbsp; {{phone}}{{/if}}{{#if linkedinUrl}} &nbsp;·&nbsp; {{linkedinUrl}}{{/if}}{{#if githubUrl}} &nbsp;·&nbsp; {{githubUrl}}{{/if}}{{#if portfolioUrl}} &nbsp;·&nbsp; {{portfolioUrl}}{{/if}}
+    </div>
+  </header>
+
+  {{#if summary}}
+  <section class="summary">
+    <h2>Summary</h2>
+    <p>{{summary}}</p>
+  </section>
+  {{/if}}
+
+  {{#if experiencesHtml}}
+  <section>
+    <h2>Experience</h2>
+    {{{experiencesHtml}}}
+  </section>
+  {{/if}}
+
+  {{#if skillsHtml}}
+  <section>
+    <h2>Skills</h2>
+    {{{skillsHtml}}}
+  </section>
+  {{/if}}
+
+  {{#if educationHtml}}
+  <section>
+    <h2>Education</h2>
+    {{{educationHtml}}}
+  </section>
+  {{/if}}
+
+  {{#if keywordsHtml}}
+  <section>
+    <h2>Keywords</h2>
+    <p class="keywords">{{{keywordsHtml}}}</p>
+  </section>
+  {{/if}}
+</body>
+</html>

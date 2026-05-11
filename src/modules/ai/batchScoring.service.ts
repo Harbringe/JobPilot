@@ -5,8 +5,9 @@
  * Scores are persisted in the JobScore table and reused until re-scored.
  */
 
+import pLimit from "p-limit";
 import { prisma } from "../../db/index.js";
-import { grokJSON, isGrokConfigured } from "../ai/grok.client.js";
+import { getAIClient, type AIClient } from "./providers/index.js";
 import type { MatchScores } from "./matching.service.js";
 
 interface ProfileData {
@@ -34,21 +35,25 @@ interface JobData {
 
 const BATCH_SYSTEM_PROMPT = `You are an expert job matching AI. You will receive a candidate profile and MULTIPLE job postings. Score each job against the candidate.
 
-You MUST respond with valid JSON: an array of objects, one per job, in the SAME ORDER as the jobs were listed.
-
-Each object must have:
+You MUST respond with valid JSON in this exact shape:
 {
-  "jobIndex": <0-based index matching the job order>,
-  "matchScore": <0-100 overall fit>,
-  "skillMatch": <0-100>,
-  "experienceMatch": <0-100>,
-  "locationMatch": <0-100>,
-  "salaryMatch": <0-100, default 75 if no salary data>,
-  "acceptanceScore": <0-100 likelihood of hire>,
-  "matchReason": "<1-2 sentences>",
-  "missingSkills": ["<skills candidate lacks>"],
-  "strongPoints": ["<candidate strengths that match>"]
+  "scores": [
+    {
+      "jobIndex": <0-based index matching the job order>,
+      "matchScore": <0-100 overall fit>,
+      "skillMatch": <0-100>,
+      "experienceMatch": <0-100>,
+      "locationMatch": <0-100>,
+      "salaryMatch": <0-100, default 75 if no salary data>,
+      "acceptanceScore": <0-100 likelihood of hire>,
+      "matchReason": "<1-2 sentences>",
+      "missingSkills": ["<skills candidate lacks>"],
+      "strongPoints": ["<candidate strengths that match>"]
+    }
+  ]
 }
+
+The "scores" array must contain one object per job, in the SAME ORDER as the jobs were listed.
 
 Scoring: 90-100=perfect, 70-89=strong, 50-69=moderate, 30-49=weak, 0-29=poor.
 Be concise in matchReason. Max 3 items in missingSkills and strongPoints.`;
@@ -81,6 +86,7 @@ function buildBatchJobsText(jobs: JobData[]): string {
  * Score a batch of jobs (up to 10) against a profile in a single LLM call.
  */
 async function scoreBatch(
+    ai: AIClient,
     profile: ProfileData,
     jobs: JobData[]
 ): Promise<Map<string, MatchScores>> {
@@ -89,17 +95,20 @@ async function scoreBatch(
     const profileText = buildProfileText(profile);
     const jobsText = buildBatchJobsText(jobs);
 
-    const response = await grokJSON<Array<MatchScores & { jobIndex: number }>>([
+    // Wrap the array in an object so providers using strict JSON-mode (Anthropic, Gemini, OpenAI)
+    // get a top-level object as required.
+    const response = await ai.chatJSON<{ scores: Array<MatchScores & { jobIndex: number }> }>([
         { role: "system", content: BATCH_SYSTEM_PROMPT },
         {
             role: "user",
-            content: `${profileText}\n\n---\n\n${jobsText}\n\nScore all ${jobs.length} jobs above against this candidate.`,
+            content: `${profileText}\n\n---\n\n${jobsText}\n\nScore all ${jobs.length} jobs above against this candidate. Wrap the array under a top-level key "scores".`,
         },
     ], { temperature: 0.2, maxTokens: 3000 });
 
-    if (!response || !Array.isArray(response)) return results;
+    const scoresArr = response?.scores;
+    if (!scoresArr || !Array.isArray(scoresArr)) return results;
 
-    for (const score of response) {
+    for (const score of scoresArr) {
         const idx = score.jobIndex;
         if (idx >= 0 && idx < jobs.length) {
             results.set(jobs[idx].id, {
@@ -135,7 +144,8 @@ export interface BatchScoreResult {
  * Processes in batches of 10, skips already-scored jobs (unless force=true).
  */
 export async function scoreAllJobs(userId: string, force = false): Promise<BatchScoreResult> {
-    if (!isGrokConfigured()) {
+    const ai = await getAIClient(userId);
+    if (!ai) {
         return { scored: 0, skipped: 0, total: 0, batches: 0 };
     }
 
@@ -189,59 +199,101 @@ export async function scoreAllJobs(userId: string, force = false): Promise<Batch
         preferences: profile.preferences,
     };
 
-    // Process in batches of 10
+    // Process in batches with bounded concurrency
     const BATCH_SIZE = 10;
-    let scored = 0;
-    let batches = 0;
+    const concurrency = Math.max(1, Number(process.env.SCORE_CONCURRENCY ?? 3));
+    const limit = pLimit(concurrency);
 
+    const totalBatches = Math.ceil(jobsToScore.length / BATCH_SIZE);
+    let scored = 0;
+    let batchesDone = 0;
+
+    const tasks: Promise<void>[] = [];
     for (let i = 0; i < jobsToScore.length; i += BATCH_SIZE) {
         const batch = jobsToScore.slice(i, i + BATCH_SIZE);
-        const jobData: JobData[] = batch.map((j) => ({
-            id: j.id,
-            title: j.title,
-            company: j.company,
-            location: j.location,
-            remoteType: j.remoteType,
-            salaryMin: j.salaryMin,
-            salaryMax: j.salaryMax,
-            description: j.description,
-            requirements: j.requirements,
-        }));
+        const batchIndex = i / BATCH_SIZE + 1;
+        tasks.push(
+            limit(async () => {
+                const count = await runOneBatch(ai, userId, profileData, batch);
+                scored += count;
+                batchesDone++;
+                console.log(
+                    `   📊 Batch ${batchIndex}/${totalBatches}: scored ${count}/${batch.length} (concurrency ${concurrency})`
+                );
+            })
+        );
+    }
 
+    await Promise.all(tasks);
+
+    return { scored, skipped, total: allJobs.length, batches: batchesDone };
+}
+
+const RETRY_DELAYS_MS = [400, 1200, 3600];
+
+function isRetryableProviderError(message: string): boolean {
+    return /\b(429|5\d\d)\b/.test(message);
+}
+
+async function runOneBatch(
+    ai: AIClient,
+    userId: string,
+    profile: ProfileData,
+    batch: Array<{
+        id: string;
+        title: string;
+        company: string;
+        location: string | null;
+        remoteType: string | null;
+        salaryMin: number | null;
+        salaryMax: number | null;
+        description: string;
+        requirements: string[];
+    }>
+): Promise<number> {
+    const jobData: JobData[] = batch.map((j) => ({
+        id: j.id,
+        title: j.title,
+        company: j.company,
+        location: j.location,
+        remoteType: j.remoteType,
+        salaryMin: j.salaryMin,
+        salaryMax: j.salaryMax,
+        description: j.description,
+        requirements: j.requirements,
+    }));
+
+    let scores: Map<string, MatchScores> | null = null;
+
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
         try {
-            const scores = await scoreBatch(profileData, jobData);
-
-            // Upsert each score
-            for (const [jobId, score] of scores) {
-                await prisma.jobScore.upsert({
-                    where: { userId_jobId: { userId, jobId } },
-                    create: {
-                        userId,
-                        jobId,
-                        ...score,
-                    },
-                    update: {
-                        ...score,
-                        scoredAt: new Date(),
-                    },
-                });
-                scored++;
-            }
-
-            batches++;
-            console.log(`   📊 Batch ${batches}: scored ${scores.size}/${batch.length} jobs`);
+            scores = await scoreBatch(ai, profile, jobData);
+            break;
         } catch (err) {
-            console.warn(`   ⚠️ Batch ${batches + 1} failed:`, (err as Error).message);
-            batches++;
-        }
-
-        // Small delay between batches to avoid rate limits
-        if (i + BATCH_SIZE < jobsToScore.length) {
-            await new Promise((r) => setTimeout(r, 500));
+            const msg = (err as Error).message || "";
+            const retryable = isRetryableProviderError(msg) && attempt < RETRY_DELAYS_MS.length;
+            if (!retryable) {
+                console.warn(`   ⚠️  Batch giving up after ${attempt + 1} attempt(s): ${msg}`);
+                return 0;
+            }
+            const delay = RETRY_DELAYS_MS[attempt];
+            console.warn(`   ↻ Batch retry in ${delay}ms (${msg})`);
+            await new Promise((r) => setTimeout(r, delay));
         }
     }
 
-    return { scored, skipped, total: allJobs.length, batches };
+    if (!scores || scores.size === 0) return 0;
+
+    let count = 0;
+    for (const [jobId, score] of scores) {
+        await prisma.jobScore.upsert({
+            where: { userId_jobId: { userId, jobId } },
+            create: { userId, jobId, ...score },
+            update: { ...score, scoredAt: new Date() },
+        });
+        count++;
+    }
+    return count;
 }
 
 /**

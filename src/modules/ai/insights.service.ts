@@ -9,7 +9,7 @@
  */
 
 import { prisma } from "../../db/index.js";
-import { grokJSON, isGrokConfigured } from "./grok.client.js";
+import { getAIClient } from "./providers/index.js";
 
 export interface JobInsightData {
     overview: {
@@ -87,10 +87,8 @@ If information isn't in the job posting, make educated inferences based on compa
  * Get or generate AI insights for a job.
  * Returns cached insights if available (less than 7 days old).
  */
-export async function getJobInsights(jobId: string): Promise<JobInsightData | null> {
-    if (!isGrokConfigured()) return null;
-
-    // Check cache first
+export async function getJobInsights(userId: string, jobId: string): Promise<JobInsightData | null> {
+    // Check cache first (cache is shared across users — insights are job-specific not user-specific)
     const cached = await prisma.jobInsight.findUnique({
         where: { jobId },
     });
@@ -103,12 +101,13 @@ export async function getJobInsights(jobId: string): Promise<JobInsightData | nu
         }
     }
 
-    // Fetch the job
+    const ai = await getAIClient(userId);
+    if (!ai) return null;
+
     const job = await prisma.job.findUnique({ where: { id: jobId } });
     if (!job) return null;
 
-    // Generate insights via LLM
-    const insights = await grokJSON<JobInsightData>([
+    const insights = await ai.chatJSON<JobInsightData>([
         { role: "system", content: INSIGHTS_SYSTEM_PROMPT },
         {
             role: "user",

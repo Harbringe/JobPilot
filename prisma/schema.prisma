@@ -18,16 +18,22 @@ model User {
   name          String?
   avatarUrl     String?   @map("avatar_url")
   plan          Plan      @default(FREE)
-  provider      String?   // "google", "github", "email"
+  provider      String? // "google", "github", "email"
   providerId    String?   @map("provider_id")
   emailVerified Boolean   @default(false) @map("email_verified")
   createdAt     DateTime  @default(now()) @map("created_at")
   lastLogin     DateTime? @map("last_login")
 
-  profile       Profile?
-  applications  Application[]
-  refreshTokens RefreshToken[]
-  jobScores     JobScore[]
+  profile            Profile?
+  applications       Application[]
+  refreshTokens      RefreshToken[]
+  jobScores          JobScore[]
+  evaluations        JobEvaluation[]
+  interviewStories   InterviewStory[]
+  negotiationScripts NegotiationScript[]
+  portals            Portal[]
+  aiConfig           UserAiConfig?
+  autoApplyJobs      AutoApplyJob[]
 
   @@map("users")
 }
@@ -56,40 +62,40 @@ enum Plan {
 // ─────────────────────────────────────
 
 model Profile {
-  id          String   @id @default(uuid())
-  userId      String   @unique @map("user_id")
-  fullName    String   @map("full_name")
-  headline    String?
-  summary     String?
-  phone       String?
-  location    String?
-  linkedinUrl String?  @map("linkedin_url")
-  githubUrl   String?  @map("github_url")
-  portfolioUrl String? @map("portfolio_url")
-  preferences Json?    // { salaryMin, salaryMax, currency, remoteType, visaRequired, industries[] }
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(uuid())
+  userId       String   @unique @map("user_id")
+  fullName     String   @map("full_name")
+  headline     String?
+  summary      String?
+  phone        String?
+  location     String?
+  linkedinUrl  String?  @map("linkedin_url")
+  githubUrl    String?  @map("github_url")
+  portfolioUrl String?  @map("portfolio_url")
+  preferences  Json? // { salaryMin, salaryMax, currency, remoteType, visaRequired, industries[] }
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  experiences  WorkExperience[]
-  educations   Education[]
-  skills       Skill[]
-  projects     Project[]
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experiences    WorkExperience[]
+  educations     Education[]
+  skills         Skill[]
+  projects       Project[]
   certifications Certification[]
 
   @@map("profiles")
 }
 
 model WorkExperience {
-  id          String   @id @default(uuid())
-  profileId   String   @map("profile_id")
+  id          String    @id @default(uuid())
+  profileId   String    @map("profile_id")
   company     String
   title       String
   location    String?
-  startDate   DateTime @map("start_date")
+  startDate   DateTime  @map("start_date")
   endDate     DateTime? @map("end_date")
-  current     Boolean  @default(false)
+  current     Boolean   @default(false)
   description String?
-  sortOrder   Int      @default(0) @map("sort_order")
+  sortOrder   Int       @default(0) @map("sort_order")
 
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
@@ -98,16 +104,16 @@ model WorkExperience {
 }
 
 model Education {
-  id          String   @id @default(uuid())
-  profileId   String   @map("profile_id")
+  id          String    @id @default(uuid())
+  profileId   String    @map("profile_id")
   institution String
   degree      String
   field       String?
-  startDate   DateTime @map("start_date")
+  startDate   DateTime  @map("start_date")
   endDate     DateTime? @map("end_date")
   gpa         String?
   description String?
-  sortOrder   Int      @default(0) @map("sort_order")
+  sortOrder   Int       @default(0) @map("sort_order")
 
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
@@ -116,11 +122,11 @@ model Education {
 }
 
 model Skill {
-  id        String @id @default(uuid())
-  profileId String @map("profile_id")
+  id        String     @id @default(uuid())
+  profileId String     @map("profile_id")
   name      String
   level     SkillLevel @default(INTERMEDIATE)
-  category  String?    // "programming", "framework", "tool", "soft_skill"
+  category  String? // "programming", "framework", "tool", "soft_skill"
 
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
@@ -136,13 +142,13 @@ enum SkillLevel {
 }
 
 model Project {
-  id          String  @id @default(uuid())
-  profileId   String  @map("profile_id")
+  id          String   @id @default(uuid())
+  profileId   String   @map("profile_id")
   name        String
   description String?
   url         String?
   techStack   String[] @map("tech_stack")
-  sortOrder   Int     @default(0) @map("sort_order")
+  sortOrder   Int      @default(0) @map("sort_order")
 
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
@@ -151,13 +157,13 @@ model Project {
 }
 
 model Certification {
-  id          String   @id @default(uuid())
-  profileId   String   @map("profile_id")
-  name        String
-  issuer      String
-  issueDate   DateTime? @map("issue_date")
-  expiryDate  DateTime? @map("expiry_date")
-  url         String?
+  id         String    @id @default(uuid())
+  profileId  String    @map("profile_id")
+  name       String
+  issuer     String
+  issueDate  DateTime? @map("issue_date")
+  expiryDate DateTime? @map("expiry_date")
+  url        String?
 
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
@@ -170,28 +176,29 @@ model Certification {
 // ─────────────────────────────────────
 
 model Job {
-  id             String   @id @default(uuid())
+  id             String      @id @default(uuid())
   title          String
   company        String
-  companyLogoUrl String?  @map("company_logo_url")
+  companyLogoUrl String?     @map("company_logo_url")
   location       String?
   remoteType     RemoteType? @map("remote_type")
-  salaryMin      Int?     @map("salary_min")
-  salaryMax      Int?     @map("salary_max")
-  salaryCurrency String?  @map("salary_currency")
+  salaryMin      Int?        @map("salary_min")
+  salaryMax      Int?        @map("salary_max")
+  salaryCurrency String?     @map("salary_currency")
   description    String
   requirements   String[]
-  source         String   // "indeed", "adzuna", "remoteok", etc.
-  sourceUrl      String?  @map("source_url")
-  applyUrl       String   @map("apply_url")
-  postedAt       DateTime? @map("posted_at")
-  scrapedAt      DateTime @default(now()) @map("scraped_at")
-  fingerprint    String   @unique
-  isActive       Boolean  @default(true) @map("is_active")
+  source         String // "indeed", "adzuna", "remoteok", etc.
+  sourceUrl      String?     @map("source_url")
+  applyUrl       String      @map("apply_url")
+  postedAt       DateTime?   @map("posted_at")
+  scrapedAt      DateTime    @default(now()) @map("scraped_at")
+  fingerprint    String      @unique
+  isActive       Boolean     @default(true) @map("is_active")
 
   applications Application[]
   jobScores    JobScore[]
   insight      JobInsight?
+  evaluations  JobEvaluation[]
 
   @@index([isActive, postedAt(sort: Desc)])
   @@index([source, scrapedAt(sort: Desc)])
@@ -227,9 +234,14 @@ model Application {
   appliedAt       DateTime          @default(now()) @map("applied_at")
   updatedAt       DateTime          @updatedAt @map("updated_at")
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  job     Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job     Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   resumes Resume[]
+
+  evaluations        JobEvaluation[]
+  storiesCreatedHere InterviewStory[]    @relation("StorySourceApp")
+  negotiationScripts NegotiationScript[]
+  autoApplyJobs      AutoApplyJob[]
 
   @@unique([userId, jobId])
   @@index([userId, appliedAt(sort: Desc)])
@@ -249,12 +261,15 @@ enum ApplicationStatus {
 }
 
 model Resume {
-  id              String   @id @default(uuid())
-  applicationId   String   @map("application_id")
-  pdfUrl          String   @map("pdf_url")
-  template        String   @default("modern")
-  contentSnapshot Json?    @map("content_snapshot")
-  generatedAt     DateTime @default(now()) @map("generated_at")
+  id              String    @id @default(uuid())
+  applicationId   String    @map("application_id")
+  pdfUrl          String    @map("pdf_url")
+  template        String    @default("modern")
+  contentSnapshot Json?     @map("content_snapshot")
+  generatedAt     DateTime  @default(now()) @map("generated_at")
+  atsPdfUrl       String?   @map("ats_pdf_url")
+  keywords        String[]  @default([])
+  pdfGeneratedAt  DateTime? @map("pdf_generated_at")
 
   application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
@@ -296,7 +311,7 @@ model JobScore {
 model JobInsight {
   id          String   @id @default(uuid())
   jobId       String   @unique @map("job_id")
-  insights    Json     // structured AI analysis
+  insights    Json // structured AI analysis
   generatedAt DateTime @default(now()) @map("generated_at")
 
   job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -304,3 +319,181 @@ model JobInsight {
   @@map("job_insights")
 }
 
+// ─────────────────────────────────────
+// career-ops port: 6-Block Job Evaluation (per user × job)
+// ─────────────────────────────────────
+
+model JobEvaluation {
+  id            String  @id @default(uuid())
+  userId        String  @map("user_id")
+  jobId         String  @map("job_id")
+  applicationId String? @map("application_id")
+
+  roleSummary          Json @map("role_summary")
+  cvMatchAssessment    Json @map("cv_match_assessment")
+  levelStrategy        Json @map("level_strategy")
+  compensationResearch Json @map("compensation_research")
+  personalization      Json
+  interviewPrep        Json @map("interview_prep")
+
+  generatedAt DateTime @default(now()) @map("generated_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  model       String?
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job         Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  application Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, jobId])
+  @@index([userId, generatedAt(sort: Desc)])
+  @@map("job_evaluations")
+}
+
+// ─────────────────────────────────────
+// career-ops port: STAR interview story bank
+// ─────────────────────────────────────
+
+model InterviewStory {
+  id                  String   @id @default(uuid())
+  userId              String   @map("user_id")
+  title               String
+  situation           String   @db.Text
+  task                String   @db.Text
+  action              String   @db.Text
+  result              String   @db.Text
+  reflection          String?  @db.Text
+  competencies        String[] @default([])
+  tags                String[] @default([])
+  sourceApplicationId String?  @map("source_application_id")
+  isAiGenerated       Boolean  @default(false) @map("is_ai_generated")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceApplication Application? @relation("StorySourceApp", fields: [sourceApplicationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, updatedAt(sort: Desc)])
+  @@map("interview_stories")
+}
+
+// ─────────────────────────────────────
+// career-ops port: Negotiation scripts
+// ─────────────────────────────────────
+
+model NegotiationScript {
+  id            String          @id @default(uuid())
+  userId        String          @map("user_id")
+  applicationId String?         @map("application_id")
+  type          NegotiationType
+  title         String
+  content       String          @db.Text
+  context       Json?
+  generatedAt   DateTime        @default(now()) @map("generated_at")
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, generatedAt(sort: Desc)])
+  @@map("negotiation_scripts")
+}
+
+enum NegotiationType {
+  SALARY
+  GEO_DISCOUNT
+  COMPETING_OFFER
+  EQUITY
+  BENEFITS
+  COUNTER_OFFER
+}
+
+// ─────────────────────────────────────
+// career-ops port: Portal scanner config
+// ─────────────────────────────────────
+
+model Portal {
+  id            String         @id @default(uuid())
+  userId        String?        @map("user_id") // null = global default
+  company       String
+  provider      PortalProvider
+  url           String
+  filterTags    String[]       @default([]) @map("filter_tags")
+  enabled       Boolean        @default(true)
+  lastScannedAt DateTime?      @map("last_scanned_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, company, provider])
+  @@index([enabled, provider])
+  @@map("portals")
+}
+
+enum PortalProvider {
+  ASHBY
+  GREENHOUSE
+  LEVER
+  WORKABLE
+  WELLFOUND
+  CUSTOM
+}
+
+// ─────────────────────────────────────
+// AI Provider config (per user, encrypted key)
+// ─────────────────────────────────────
+
+model UserAiConfig {
+  id              String     @id @default(uuid())
+  userId          String     @unique @map("user_id")
+  provider        AiProvider
+  model           String?
+  baseUrl         String?    @map("base_url")
+  apiKeyEncrypted String?    @map("api_key_encrypted") // AES-256-GCM, base64(iv|tag|ciphertext)
+  hasKey          Boolean    @default(false) @map("has_key")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_ai_configs")
+}
+
+enum AiProvider {
+  GROQ
+  ANTHROPIC
+  GEMINI
+  OPENAI
+}
+
+// ─────────────────────────────────────
+// Auto-apply (fill-and-pause)
+// ─────────────────────────────────────
+
+model AutoApplyJob {
+  id            String          @id @default(uuid())
+  userId        String          @map("user_id")
+  applicationId String          @map("application_id")
+  status        AutoApplyStatus @default(PENDING)
+  ats           String? // greenhouse | lever | ashby | custom
+  applyUrl      String          @map("apply_url")
+  filledFields  Json?           @map("filled_fields")
+  screenshotUrl String?         @map("screenshot_url")
+  reviewUrl     String?         @map("review_url") // direct link to ATS apply page so user can finish
+  blockedReason String?         @map("blocked_reason")
+  errors        Json?
+  createdAt     DateTime        @default(now()) @map("created_at")
+  finishedAt    DateTime?       @map("finished_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([applicationId])
+  @@map("autoapply_jobs")
+}
+
+enum AutoApplyStatus {
+  PENDING
+  FILLING
+  READY_FOR_REVIEW
+  BLOCKED
+  FAILED
+}

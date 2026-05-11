@@ -186,6 +186,7 @@ async function scoreApplicationAsync(userId: string, applicationId: string, job:
     if (!profile) return; // No profile, can't score
 
     const scores = await scoreJob(
+        userId,
         {
             fullName: profile.fullName,
             headline: profile.headline,

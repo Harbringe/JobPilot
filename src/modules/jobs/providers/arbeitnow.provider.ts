@@ -4,6 +4,7 @@
  */
 
 import type { NormalizedJob } from "./remotive.provider.js";
+import { htmlToMarkdown } from "../../../lib/html-to-markdown.js";
 
 interface ArbeitnowJob {
     slug: string;
@@ -24,21 +25,6 @@ interface ArbeitnowResponse {
     meta: { current_page: number; last_page: number };
 }
 
-function stripHtml(html: string): string {
-    return html
-        .replace(/<[^>]*>/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/&#x26;/g, "&")
-        .replace(/&nbsp;/g, " ")
-        .replace(/\\n/g, "\n")
-        .replace(/\s+/g, " ")
-        .trim()
-        .substring(0, 10000);
-}
-
 function normalizeArbeitnowJob(job: ArbeitnowJob): NormalizedJob {
     return {
         fingerprint: `arbeitnow-${job.slug}`,
@@ -50,7 +36,7 @@ function normalizeArbeitnowJob(job: ArbeitnowJob): NormalizedJob {
         salaryMin: null,
         salaryMax: null,
         salaryCurrency: "EUR",
-        description: stripHtml(job.description),
+        description: htmlToMarkdown(job.description),
         requirements: job.tags?.slice(0, 30) || [],
         source: "arbeitnow",
         sourceUrl: job.url,
@@ -67,7 +53,8 @@ export async function fetchArbeitnowJobs(): Promise<NormalizedJob[]> {
     while (page <= maxPages) {
         try {
             const res = await fetch(
-                `https://www.arbeitnow.com/api/job-board-api?page=${page}`
+                `https://www.arbeitnow.com/api/job-board-api?page=${page}`,
+                { signal: AbortSignal.timeout(15_000) }
             );
             if (!res.ok) {
                 console.warn(`⚠️  Arbeitnow (page ${page}): HTTP ${res.status}`);

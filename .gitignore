@@ -2,3 +2,9 @@
 node_modules/
 dist/
 *.log
+
+# User-private generated files (resume PDFs, auto-apply screenshots)
+storage/
+# Legacy locations — keep ignored in case they linger
+public/resumes/
+public/autoapply/

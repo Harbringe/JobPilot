@@ -25,6 +25,7 @@ export interface UserPublic {
     name: string | null;
     avatarUrl: string | null;
     plan: "FREE" | "PRO" | "PREMIUM";
+    profileCompleted: boolean;
 }
 
 // ──────────────────────────────────────

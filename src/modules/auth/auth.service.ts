@@ -13,6 +13,11 @@ const JWT_SECRET_VALUE: string = JWT_SECRET; // narrowed after guard
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "15m";
 const REFRESH_EXPIRES_DAYS = 7;
 
+async function hasProfile(userId: string): Promise<boolean> {
+    const p = await prisma.profile.findUnique({ where: { userId }, select: { id: true } });
+    return !!p;
+}
+
 // ─── Register ──────────────────────────
 export async function register(data: RegisterRequest): Promise<AuthResponse> {
     const email = data.email.toLowerCase().trim();
@@ -36,6 +41,7 @@ export async function register(data: RegisterRequest): Promise<AuthResponse> {
         name: user.name,
         avatarUrl: user.avatarUrl,
         plan: user.plan,
+        profileCompleted: false,
     });
 }
 
@@ -54,12 +60,14 @@ export async function login(data: LoginRequest): Promise<AuthResponse> {
         data: { lastLogin: new Date() },
     });
 
+    const profileCompleted = await hasProfile(user.id);
     return generateTokens(user.id, user.email, user.plan, {
         id: user.id,
         email: user.email,
         name: user.name,
         avatarUrl: user.avatarUrl,
         plan: user.plan,
+        profileCompleted,
     });
 }
 
@@ -81,12 +89,14 @@ export async function refreshToken(token: string): Promise<AuthResponse> {
     await prisma.refreshToken.delete({ where: { id: stored.id } });
 
     const user = stored.user;
+    const profileCompleted = await hasProfile(user.id);
     return generateTokens(user.id, user.email, user.plan, {
         id: user.id,
         email: user.email,
         name: user.name,
         avatarUrl: user.avatarUrl,
         plan: user.plan,
+        profileCompleted,
     });
 }
 
@@ -95,12 +105,14 @@ export async function getMe(userId: string): Promise<UserPublic | null> {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return null;
 
+    const profileCompleted = await hasProfile(user.id);
     return {
         id: user.id,
         email: user.email,
         name: user.name,
         avatarUrl: user.avatarUrl,
         plan: user.plan,
+        profileCompleted,
     };
 }
 

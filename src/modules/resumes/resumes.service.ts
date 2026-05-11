@@ -4,7 +4,7 @@
  */
 
 import { prisma } from "../../db/index.js";
-import { grokJSON, isGrokConfigured } from "../ai/grok.client.js";
+import { getAIClient, type AIClient } from "../ai/providers/index.js";
 
 interface ResumeContent {
     professionalSummary: string;
@@ -83,34 +83,36 @@ export async function createResume(applicationId: string, userId: string, templa
 
     let finalContent = contentSnapshot || {};
 
-    // If Grok is configured and no content was provided, generate AI content
-    if (isGrokConfigured() && !contentSnapshot) {
-        const profile = await prisma.profile.findUnique({
-            where: { userId },
-            include: { experiences: true, educations: true, skills: true },
-        });
-
-        if (profile) {
-            const generated = await generateResumeContent(profile, application.job);
-            if (generated) {
-                finalContent = generated;
+    // If AI is configured and no content was provided, generate tailored content
+    if (!contentSnapshot) {
+        const ai = await getAIClient(userId);
+        if (ai) {
+            const profile = await prisma.profile.findUnique({
+                where: { userId },
+                include: { experiences: true, educations: true, skills: true },
+            });
+            if (profile) {
+                const generated = await generateResumeContent(ai, profile, application.job);
+                if (generated) {
+                    finalContent = generated;
+                }
             }
         }
     }
 
-    const pdfUrl = `https://storage.example.com/resumes/${applicationId}-${Date.now()}.pdf`;
-
     return prisma.resume.create({
         data: {
             applicationId,
-            pdfUrl,
+            // pdfUrl is the legacy field; the real ATS PDF lives at atsPdfUrl
+            // and is populated by pdf.service.generateAtsPdf().
+            pdfUrl: "",
             template,
             contentSnapshot: finalContent,
         },
     });
 }
 
-async function generateResumeContent(profile: any, job: any): Promise<ResumeContent | null> {
+async function generateResumeContent(ai: AIClient, profile: any, job: any): Promise<ResumeContent | null> {
     const profileText = `
 CANDIDATE:
 Name: ${profile.fullName}
@@ -132,7 +134,7 @@ Company: ${job.company}
 Requirements: ${job.requirements?.join(", ") || "N/A"}
 Description: ${job.description?.substring(0, 2000) || "N/A"}`;
 
-    return grokJSON<ResumeContent>([
+    return ai.chatJSON<ResumeContent>([
         { role: "system", content: RESUME_SYSTEM_PROMPT },
         { role: "user", content: `${profileText}\n\n---\n\n${jobText}\n\nGenerate tailored resume content for this candidate targeting this specific job.` },
     ], { temperature: 0.4, maxTokens: 2000 });

@@ -48,3 +48,23 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
         });
     }
 }
+
+/**
+ * Auth-aware but not auth-required. Populates req.user if a valid token is
+ * present, otherwise just falls through. Used for endpoints that personalize
+ * the response when logged in but still serve anonymous callers.
+ */
+export function optionalAuthenticate(req: AuthRequest, _res: Response, next: NextFunction) {
+    const header = req.headers.authorization;
+    if (!header?.startsWith("Bearer ")) return next();
+    const token = header.split(" ")[1];
+    if (isTokenBlocked(token)) return next();
+    try {
+        const payload = jwt.verify(token, process.env.JWT_SECRET!) as AuthPayload;
+        req.user = payload;
+        req.rawToken = token;
+    } catch {
+        // Ignore — keep going anonymously.
+    }
+    next();
+}
