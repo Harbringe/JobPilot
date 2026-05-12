@@ -1,0 +1,58 @@
+name: Render deploy status
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, dev]
+
+# Allow the workflow to comment on PRs
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  comment:
+    name: Post deploy info
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Compose comment
+        id: msg
+        run: |
+          if [ "${{ github.base_ref }}" = "main" ]; then
+            ENV_NAME="production"
+            URL="${{ vars.RENDER_PROD_URL }}"
+          else
+            ENV_NAME="dev"
+            URL="${{ vars.RENDER_DEV_URL }}"
+          fi
+          if [ -z "$URL" ]; then URL="(not configured — set RENDER_PROD_URL / RENDER_DEV_URL in repo Variables)"; fi
+          {
+            echo "body<<EOF"
+            echo "### 🚀 Render deployment"
+            echo ""
+            echo "When this PR merges to \`${{ github.base_ref }}\`, Render will redeploy the **$ENV_NAME** backend:"
+            echo ""
+            echo "- **URL:** $URL"
+            echo "- **Live status:** see the *Render – jobpilot-api* commit check on this PR"
+            echo "- **Dashboard:** https://dashboard.render.com"
+            echo ""
+            echo "<sub>Posted by render-deploy-comment.yml — branch protection blocks merge if the deploy fails.</sub>"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Find existing bot comment
+        id: find
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: "Render deployment"
+
+      - name: Upsert comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-id: ${{ steps.find.outputs.comment-id }}
+          edit-mode: replace
+          body: ${{ steps.msg.outputs.body }}

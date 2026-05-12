@@ -1,6 +1,4 @@
 import path from "path";
-import { promises as fs } from "fs";
-import { fileURLToPath } from "url";
 import { Router } from "express";
 import type { Response } from "express";
 import { authenticate, AuthRequest } from "../../middleware/auth.js";
@@ -10,16 +8,10 @@ import {
     getAutoApply,
     listAutoApply,
 } from "./autoapply.service.js";
+import { downloadObject } from "../../lib/supabase.js";
 
 export const autoApplyRouter: Router = Router();
 autoApplyRouter.use(authenticate);
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SCREENSHOT_DIR = path.resolve(
-    __dirname,
-    "../../../",
-    process.env.AUTOAPPLY_SCREENSHOT_DIR ?? "storage/autoapply"
-);
 
 // POST /autoapply/:applicationId — kick off a fill-and-pause run
 autoApplyRouter.post("/:applicationId", validateUUID("applicationId"), async (req: AuthRequest, res: Response) => {
@@ -49,14 +41,15 @@ autoApplyRouter.get("/task/:id/screenshot", validateUUID("id"), async (req: Auth
         return;
     }
     const filename = path.basename(task.screenshotUrl);
-    const filePath = path.join(SCREENSHOT_DIR, filename);
+    let buffer: Buffer;
     try {
-        await fs.access(filePath);
-    } catch {
+        buffer = await downloadObject("autoapply", filename);
+    } catch (err) {
+        console.warn("autoapply screenshot fetch failed:", (err as Error).message);
         res.status(404).json({ success: false, error: { code: "AUTOAPPLY_SCREENSHOT_MISSING", message: "Screenshot file no longer exists" } });
         return;
     }
     res.setHeader("Content-Type", "image/png");
     res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
-    res.sendFile(filePath);
+    res.send(buffer);
 });
