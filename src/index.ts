@@ -21,7 +21,7 @@ import { autoApplyRouter } from "./modules/autoapply/autoapply.routes.js";
 import { errorHandler } from "./middleware/error.js";
 
 const app: express.Express = express();
-const PORT = process.env.API_PORT || 3001;
+const PORT = process.env.PORT || process.env.API_PORT || 3001;
 const IS_PROD = process.env.NODE_ENV === "production";
 
 // Hard-fail in production if WEB_URL is missing — prevents accidental open CORS.
