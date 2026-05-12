@@ -1,17 +1,11 @@
 import path from "path";
-import { fileURLToPath } from "url";
+import os from "os";
 import { promises as fs } from "fs";
 import { prisma } from "../../db/index.js";
 import { fillApplyForm, type ApplicantData } from "./autoapply.fillers.js";
 import { detectAts } from "./autoapply.types.js";
 import { generateAtsPdf } from "../resumes/pdf.service.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PDF_DIR = path.resolve(
-    __dirname,
-    "../../../",
-    process.env.RESUME_PDF_DIR ?? "public/resumes"
-);
+import { downloadObject } from "../../lib/supabase.js";
 
 function dailyCap(): number {
     return Math.max(1, Number(process.env.AUTOAPPLY_DAILY_CAP ?? 20));
@@ -30,18 +24,20 @@ function splitName(full: string): { firstName: string; lastName: string } {
     return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
 }
 
-async function resolveResumePdfPath(applicationId: string): Promise<string | null> {
+async function materializeResumePdf(applicationId: string): Promise<string | null> {
     const resume = await prisma.resume.findFirst({
         where: { applicationId, atsPdfUrl: { not: null } },
         orderBy: { generatedAt: "desc" },
     });
     if (!resume?.atsPdfUrl) return null;
     const filename = path.basename(resume.atsPdfUrl);
-    const fullPath = path.join(PDF_DIR, filename);
     try {
-        await fs.access(fullPath);
-        return fullPath;
-    } catch {
+        const buf = await downloadObject("resumes", filename);
+        const tmp = path.join(os.tmpdir(), `jobpilot-${Date.now()}-${filename}`);
+        await fs.writeFile(tmp, buf);
+        return tmp;
+    } catch (err) {
+        console.warn("autoapply: resume materialize failed:", (err as Error).message);
         return null;
     }
 }
@@ -65,13 +61,11 @@ export async function startAutoApply(userId: string, applicationId: string) {
     });
     if (!profile) throw new Error("PROFILE_NOT_FOUND");
 
-    // One-click flow: if no tailored PDF exists yet, generate one inline so the
-    // user doesn't have to "Tailor resume" and "Auto-apply" as two steps.
-    let resumePdfPath = await resolveResumePdfPath(applicationId);
+    let resumePdfPath = await materializeResumePdf(applicationId);
     if (!resumePdfPath) {
         try {
             await generateAtsPdf(userId, applicationId, false);
-            resumePdfPath = await resolveResumePdfPath(applicationId);
+            resumePdfPath = await materializeResumePdf(applicationId);
         } catch (err) {
             console.warn("auto-apply: tailor-on-the-fly failed:", (err as Error).message);
         }
@@ -134,6 +128,10 @@ export async function startAutoApply(userId: string, applicationId: string) {
                     finishedAt: new Date(),
                 },
             });
+        } finally {
+            if (resumePdfPath) {
+                fs.unlink(resumePdfPath).catch(() => {});
+            }
         }
     });
 

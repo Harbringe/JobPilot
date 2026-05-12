@@ -6,14 +6,10 @@ import { chromium } from "playwright";
 import { prisma } from "../../db/index.js";
 import { getAIClient } from "../ai/providers/index.js";
 import { createResume } from "./resumes.service.js";
+import { downloadObject, uploadObject } from "../../lib/supabase.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = path.resolve(__dirname, "../../../templates/ats-resume.html");
-const PDF_DIR = path.resolve(
-    __dirname,
-    "../../../",
-    process.env.RESUME_PDF_DIR ?? "public/resumes"
-);
 const PDF_BASE_URL = process.env.RESUME_PDF_BASE_URL ?? "/resumes";
 
 let browserPromise: Promise<Browser> | null = null;
@@ -122,10 +118,6 @@ function renderTemplate(tpl: string, vars: Record<string, string | undefined | n
     return out;
 }
 
-async function ensureDir(dir: string): Promise<void> {
-    await fs.mkdir(dir, { recursive: true });
-}
-
 async function readTemplate(): Promise<string> {
     try {
         return await fs.readFile(TEMPLATE_PATH, "utf-8");
@@ -211,9 +203,7 @@ export async function generateAtsPdf(
         keywordsHtml: renderKeywordsHtml(keywords),
     });
 
-    await ensureDir(PDF_DIR);
     const filename = `${resume.id}.pdf`;
-    const filePath = path.join(PDF_DIR, filename);
 
     let pdfBuffer: Buffer;
     const browser = await getBrowser();
@@ -237,7 +227,7 @@ export async function generateAtsPdf(
         await ctx.close();
     }
 
-    await fs.writeFile(filePath, pdfBuffer);
+    await uploadObject("resumes", filename, pdfBuffer, "application/pdf");
 
     const atsPdfUrl = `${PDF_BASE_URL}/${filename}`;
     await prisma.resume.update({
@@ -255,7 +245,7 @@ export async function generateAtsPdf(
 export async function streamAtsPdf(
     userId: string,
     applicationId: string
-): Promise<{ filePath: string; filename: string } | null> {
+): Promise<{ buffer: Buffer; filename: string } | null> {
     const application = await prisma.application.findFirst({
         where: { id: applicationId, userId },
         include: { resumes: { orderBy: { generatedAt: "desc" }, take: 1 } },
@@ -264,11 +254,11 @@ export async function streamAtsPdf(
     const resume = application.resumes[0];
     if (!resume?.atsPdfUrl) return null;
     const filename = path.basename(resume.atsPdfUrl);
-    const filePath = path.join(PDF_DIR, filename);
     try {
-        await fs.access(filePath);
-    } catch {
+        const buffer = await downloadObject("resumes", filename);
+        return { buffer, filename };
+    } catch (err) {
+        console.warn("ATS PDF fetch failed:", (err as Error).message);
         return null;
     }
-    return { filePath, filename };
 }

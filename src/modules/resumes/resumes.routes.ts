@@ -68,6 +68,6 @@ resumesRouter.get(
         }
         res.setHeader("Content-Type", "application/pdf");
         res.setHeader("Content-Disposition", `inline; filename="${file.filename}"`);
-        res.sendFile(file.filePath);
+        res.send(file.buffer);
     }
 );

@@ -1,21 +1,9 @@
-import path from "path";
-import { fileURLToPath } from "url";
-import { promises as fs } from "fs";
 import type { Page } from "playwright";
 import { getBrowser, NAV_TIMEOUT_MS, USER_AGENT } from "../portals/playwright.pool.js";
 import type { AtsKind, AutoApplyKit, FormField } from "./autoapply.types.js";
+import { uploadObject } from "../../lib/supabase.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SCREENSHOT_DIR = path.resolve(
-    __dirname,
-    "../../../",
-    process.env.AUTOAPPLY_SCREENSHOT_DIR ?? "public/autoapply"
-);
 const SCREENSHOT_BASE_URL = process.env.AUTOAPPLY_SCREENSHOT_BASE_URL ?? "/autoapply";
-
-async function ensureDir(dir: string) {
-    await fs.mkdir(dir, { recursive: true });
-}
 
 export interface ApplicantData {
     fullName: string;
@@ -211,11 +199,10 @@ export async function fillApplyForm(args: {
         result.coverage = { matched, total, requiredMatched, requiredTotal };
         result.fields = filled;
 
-        // Screenshot
         try {
-            await ensureDir(SCREENSHOT_DIR);
             const file = `${taskId}.png`;
-            await page.screenshot({ path: path.join(SCREENSHOT_DIR, file), fullPage: true });
+            const buf = await page.screenshot({ type: "png", fullPage: true });
+            await uploadObject("autoapply", file, buf, "image/png");
             result.screenshotUrl = `${SCREENSHOT_BASE_URL}/${file}`;
         } catch (err) {
             console.warn("auto-apply screenshot failed:", (err as Error).message);
